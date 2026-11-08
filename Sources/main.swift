@@ -12,7 +12,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private var cloudItem: NSMenuItem!
     private var hotKey: EventHotKeyRef?
     private var handler: EventHandlerRef?
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var recognizer: SFSpeechRecognizer?
@@ -26,12 +26,17 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private var target: NSRunningApplication?
     private var previousApp: NSRunningApplication?
     private var activationObserver: NSObjectProtocol?
+    private var audioObserver: NSObjectProtocol?
+    private var modalVisible = false
+    private var interruption: String?
     private var cloudAllowed: Bool { UserDefaults.standard.bool(forKey: "allowAppleCloud") }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         status.button?.title = "Dictate"
+        menu.autoenablesItems = false
         stateItem = item("Ready · ⌃⌥Space to dictate", action: nil)
+        stateItem.isEnabled = false
         toggleItem = item("Start dictation", action: #selector(toggle))
         menu.addItem(.separator())
         _ = item("Enable microphone & speech…", action: #selector(permissions))
@@ -48,6 +53,12 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
                   app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
             self?.previousApp = app
+        }
+        audioObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] note in
+            guard let self = self, let changed = note.object as? AVAudioEngine,
+                  changed === self.engine, self.recording else { return }
+            self.interruption = "The microphone configuration changed."
+            self.stop()
         }
         installShortcut()
     }
@@ -74,7 +85,13 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private func setState(_ text: String) { stateItem.title = text }
     private func show(_ title: String, _ message: String) {
         let alert = NSAlert(); alert.messageText = title; alert.informativeText = message
-        alert.addButton(withTitle: "OK"); NSApp.activate(ignoringOtherApps: true); alert.runModal()
+        alert.addButton(withTitle: "OK")
+        let prior = NSWorkspace.shared.frontmostApplication
+        modalVisible = true; NSApp.activate(ignoringOtherApps: true); alert.runModal(); modalVisible = false
+        if let prior = prior, !prior.isTerminated, prior.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+           NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier {
+            prior.activate(options: [])
+        }
     }
 
     @objc private func permissions() {
@@ -105,19 +122,26 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             let alert = NSAlert(); alert.messageText = "Allow Apple cloud speech recognition?"
             alert.informativeText = "If local recognition is unavailable, your microphone audio may be sent to Apple for transcription. Leave this disabled to require on-device recognition."
             alert.addButton(withTitle: "Allow"); alert.addButton(withTitle: "Keep on-device only")
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            modalVisible = true
+            let response = alert.runModal()
+            modalVisible = false
+            guard response == .alertFirstButtonReturn else { return }
         }
+        guard !recording && !finishing else { return }
         UserDefaults.standard.set(!cloudAllowed, forKey: "allowAppleCloud")
         cloudItem.state = cloudAllowed ? .on : .off
     }
 
     @objc fileprivate func toggle() {
+        guard !modalVisible else { return }
         if recording { stop(); return }
         guard !finishing else { return }
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
               SFSpeechRecognizer.authorizationStatus() == .authorized else { permissions(); return }
-        let locale = Locale(identifier: Locale.current.identifier)
-        guard let speech = SFSpeechRecognizer(locale: locale) else { show("Language unavailable", "Apple Speech does not support your current system language (\(locale.identifier))."); return }
+        let locales = [Locale.current.identifier] + Locale.preferredLanguages
+        guard let speech = locales.lazy.compactMap({ SFSpeechRecognizer(locale: Locale(identifier: $0)) }).first else {
+            show("Language unavailable", "Apple Speech does not support your preferred system languages."); return
+        }
         if !speech.supportsOnDeviceRecognition && !cloudAllowed {
             show("On-device recognition unavailable", "This Mac or language does not support Apple’s on-device recognizer. Download the language assets if available, or explicitly enable Apple cloud recognition from the menu."); return
         }
@@ -128,7 +152,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         buffer.shouldReportPartialResults = true
         buffer.requiresOnDeviceRecognition = speech.supportsOnDeviceRecognition
         if #available(macOS 13.0, *) { buffer.addsPunctuation = true }
-        request = buffer; recognizer = speech; transcript = ""
+        request = buffer; recognizer = speech; transcript = ""; interruption = nil
+        engine = AVAudioEngine()
         let id = UUID(); generation = id
         let input = engine.inputNode, format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 && format.channelCount > 0 else { request = nil; show("No microphone available", "Choose a working input device in System Settings → Sound."); return }
@@ -144,12 +169,17 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 guard let self = self, self.generation == id else { return }
                 if let result = result { self.transcript = result.bestTranscription.formattedString }
-                if result?.isFinal == true { self.complete(id: id, error: nil) }
-                else if let error = error { self.complete(id: id, error: error.localizedDescription) }
+                if result?.isFinal == true {
+                    if self.recording { self.interruption = "Speech recognition ended before you stopped." }
+                    self.complete(id: id, error: nil)
+                } else if let error = error { self.complete(id: id, error: error.localizedDescription) }
             }
         }
         // Apple’s legacy recognition service has bounded sessions. Finish before the usual one-minute limit.
-        let limit = DispatchWorkItem { [weak self] in self?.stop() }
+        let limit = DispatchWorkItem { [weak self] in
+            self?.interruption = "The 55-second session limit was reached."
+            self?.stop()
+        }
         timeout = limit; DispatchQueue.main.asyncAfter(deadline: .now() + 55, execute: limit)
     }
 
@@ -160,7 +190,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
         request?.endAudio(); setState("Finishing transcription…"); status.button?.title = "… Dictate"
         let id = generation
-        let deadline = DispatchWorkItem { [weak self] in self?.complete(id: id, error: "Speech recognition did not finalize. The partial transcript was copied; it was not pasted automatically.") }
+        let deadline = DispatchWorkItem { [weak self] in self?.complete(id: id, error: "Speech recognition did not finalize in time.") }
         timeout = deadline; DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: deadline)
     }
 
@@ -177,27 +207,41 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private func complete(id: UUID, error: String?) {
         guard generation == id, recording || finishing else { return }
         let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        generation = UUID(); cleanup()
-        guard !text.isEmpty else { setState(error == nil ? "No speech detected" : "Recognition failed — try again"); if let error = error { show("Recognition failed", error) }; return }
+        let reason = interruption ?? (recording ? "Speech recognition stopped unexpectedly." : nil) ?? error
+        generation = UUID(); let completedGeneration = generation
+        cleanup()
+        guard !text.isEmpty else { setState(reason == nil ? "No speech detected" : "No transcript · try again or check microphone"); return }
         lastTranscript = text
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
-        if let error = error { setState("Partial transcript copied — paste manually"); show("Transcript recovered", error); return }
+        if let reason = reason { setState("\(reason) Transcript copied; paste manually."); return }
         guard AXIsProcessTrusted(), let destination = target, !destination.isTerminated,
               destination.processIdentifier != ProcessInfo.processInfo.processIdentifier else { setState("Transcript copied · ⌘V to paste"); return }
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == destination.processIdentifier else {
-            setState("Focus changed · transcript copied for manual paste"); return
+        pasteWhenReleased(text: text, process: destination.processIdentifier, generation: completedGeneration, deadline: Date().addingTimeInterval(2))
+    }
+
+    private func pasteWhenReleased(text: String, process: pid_t, generation id: UUID, deadline: Date) {
+        guard generation == id, !recording && !finishing else { return }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == process,
+              NSPasteboard.general.string(forType: .string) == text else {
+            setState("Focus or clipboard changed · paste manually"); return
         }
-        // Never reactivate or paste into a different app if the user changed focus while speaking.
-        let pasteText = text, pasteTarget = destination.processIdentifier
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
-            guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pasteTarget,
-                  NSPasteboard.general.string(forType: .string) == pasteText,
-                  let down = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true),
-                  let up = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false) else { self?.setState("Transcript copied · paste manually"); return }
-            down.flags = .maskCommand; up.flags = .maskCommand
-            down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
-            self?.setState("Paste requested · copy last transcript if needed")
+        let flags = CGEventSource.flagsState(.combinedSessionState)
+        let modifiers: CGEventFlags = [.maskControl, .maskAlternate, .maskShift, .maskCommand]
+        if !flags.intersection(modifiers).isEmpty {
+            guard Date() < deadline else { setState("Modifiers still held · transcript copied for manual paste"); return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.pasteWhenReleased(text: text, process: process, generation: id, deadline: deadline)
+            }
+            return
         }
+        guard let source = CGEventSource(stateID: .privateState),
+              let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false) else {
+            setState("Transcript copied · paste manually"); return
+        }
+        down.flags = .maskCommand; up.flags = .maskCommand
+        down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
+        setState("Paste requested · copy last transcript if needed")
     }
 
     @objc private func copyLast() {
@@ -212,6 +256,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         if let hotKey = hotKey { UnregisterEventHotKey(hotKey) }
         if let handler = handler { RemoveEventHandler(handler) }
         if let observer = activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
+        if let observer = audioObserver { NotificationCenter.default.removeObserver(observer) }
     }
 }
 
