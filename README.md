@@ -1,4 +1,4 @@
-# Personal Dictation for Mac
+# Sayso for Mac
 
 A small menu-bar dictation app: **Control–Option–Space** starts listening; the same shortcut finishes and pastes the transcript into the active app. The menu also starts/stops dictation. No paid account or API key is required.
 
@@ -9,11 +9,11 @@ Requires macOS 13+ and Xcode Command Line Tools. On your Mac:
 ```sh
 xcode-select --install # only if not already installed
 ./scripts/build.sh
-cp -R "build/Personal Dictation.app" /Applications/
-open "/Applications/Personal Dictation.app"
+cp -R "build/Sayso.app" /Applications/
+open "/Applications/Sayso.app"
 ```
 
-1. From the **Dictate** menu, select **Enable microphone & speech…** and grant both permissions.
+1. From the **Sayso** menu, select **Enable microphone & speech…** and grant both permissions.
 2. Select **Enable automatic paste…**, grant Accessibility access in System Settings, then restart the app if required.
 3. Put the cursor in a normal text field in Notes, press **⌃⌥Space**, speak, then press **⌃⌥Space** again.
 4. Without Accessibility access, the transcript is copied: press **⌘V** yourself. **Copy last transcript** recovers the latest result.

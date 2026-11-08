@@ -33,7 +33,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        status.button?.title = "Dictate"
+        status.button?.title = "Sayso"
         menu.autoenablesItems = false
         stateItem = item("Ready · ⌃⌥Space to dictate", action: nil)
         stateItem.isEnabled = false
@@ -99,13 +99,13 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in DispatchQueue.main.async { self?.permissions() } }; return
         }
         if AVCaptureDevice.authorizationStatus(for: .audio) != .authorized {
-            show("Microphone access is needed", "Enable Personal Dictation in System Settings → Privacy & Security → Microphone, then reopen the app."); return
+            show("Microphone access is needed", "Enable Sayso in System Settings → Privacy & Security → Microphone, then reopen the app."); return
         }
         if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
             SFSpeechRecognizer.requestAuthorization { [weak self] _ in DispatchQueue.main.async { self?.permissions() } }; return
         }
         guard SFSpeechRecognizer.authorizationStatus() == .authorized else {
-            show("Speech recognition access is needed", "Enable Personal Dictation in System Settings → Privacy & Security → Speech Recognition."); return
+            show("Speech recognition access is needed", "Enable Sayso in System Settings → Privacy & Security → Speech Recognition."); return
         }
         setState("Permissions ready · ⌃⌥Space to dictate")
     }
@@ -113,7 +113,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     @objc private func accessibility() {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         let trusted = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
-        if !trusted { show("Enable automatic paste", "Allow Personal Dictation in System Settings → Privacy & Security → Accessibility. Restart the app if macOS asks. Without this permission your transcript is still copied for manual paste.") }
+        if !trusted { show("Enable automatic paste", "Allow Sayso in System Settings → Privacy & Security → Accessibility. Restart the app if macOS asks. Without this permission your transcript is still copied for manual paste.") }
     }
 
     @objc private func toggleCloud() {
@@ -188,7 +188,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         recording = false; finishing = true
         timeout?.cancel(); engine.stop()
         if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
-        request?.endAudio(); setState("Finishing transcription…"); status.button?.title = "… Dictate"
+        request?.endAudio(); setState("Finishing transcription…"); status.button?.title = "… Sayso"
         let id = generation
         let deadline = DispatchWorkItem { [weak self] in self?.complete(id: id, error: "Speech recognition did not finalize in time.") }
         timeout = deadline; DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: deadline)
@@ -201,7 +201,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         request?.endAudio(); request = nil
         task?.cancel(); task = nil; recognizer = nil
         recording = false; finishing = false
-        toggleItem.title = "Start dictation"; cloudItem.isEnabled = true; status.button?.title = "Dictate"
+        toggleItem.title = "Start dictation"; cloudItem.isEnabled = true; status.button?.title = "Sayso"
     }
 
     private func complete(id: UUID, error: String?) {

@@ -8,8 +8,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./scripts/build.sh
-      - run: ditto -c -k --keepParent "build/Personal Dictation.app" "build/Personal-Dictation.zip"
+      - run: ditto -c -k --keepParent "build/Sayso.app" "build/Sayso.zip"
       - uses: actions/upload-artifact@v4
         with:
-          name: Personal-Dictation-macOS
-          path: build/Personal-Dictation.zip
+          name: Sayso-macOS
+          path: build/Sayso.zip
