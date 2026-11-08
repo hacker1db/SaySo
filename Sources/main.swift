@@ -30,6 +30,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private var modalVisible = false
     private var interruption: String?
     private var cloudAllowed: Bool { UserDefaults.standard.bool(forKey: "allowAppleCloud") }
+    private var dockItem: NSMenuItem!
+    private var showInDock: Bool { UserDefaults.standard.bool(forKey: "showInDock") }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -44,6 +46,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         _ = item("Enable automatic paste…", action: #selector(accessibility))
         cloudItem = item("Allow Apple cloud recognition", action: #selector(toggleCloud))
         cloudItem.state = cloudAllowed ? .on : .off
+        dockItem = item("Show Dock icon", action: #selector(toggleDock))
+        applyDockPolicy()
         _ = item("Copy last transcript", action: #selector(copyLast))
         _ = item("Show last transcript…", action: #selector(showLast))
         menu.addItem(.separator())
@@ -75,7 +79,17 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showWelcome() {
-        show("Sayso is running", "Sayso lives in your menu bar, with no Dock icon. Click Sayso at the top of your screen to enable microphone and speech permissions, then press Control–Option–Space to start or stop dictation. Enable automatic paste from the menu if desired; otherwise paste the copied transcript yourself. Recognition stays on-device unless you explicitly allow Apple cloud recognition.")
+        show("Sayso is running", "Sayso lives in your menu bar; choose Show Dock icon from its menu if you also want it in the Dock. Click Sayso at the top of your screen to enable microphone and speech permissions, then press Control–Option–Space to start or stop dictation. Enable automatic paste from the menu if desired; otherwise paste the copied transcript yourself. Recognition stays on-device unless you explicitly allow Apple cloud recognition.")
+    }
+
+    @objc private func toggleDock() {
+        UserDefaults.standard.set(!showInDock, forKey: "showInDock")
+        applyDockPolicy()
+    }
+
+    private func applyDockPolicy() {
+        NSApp.setActivationPolicy(showInDock ? .regular : .accessory)
+        dockItem.state = showInDock ? .on : .off
     }
 
     private func item(_ title: String, action: Selector?) -> NSMenuItem {
