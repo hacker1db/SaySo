@@ -1,0 +1,15 @@
+name: Build Mac app
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./scripts/build.sh
+      - run: ditto -c -k --keepParent "build/Personal Dictation.app" "build/Personal-Dictation.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Personal-Dictation-macOS
+          path: build/Personal-Dictation.zip
