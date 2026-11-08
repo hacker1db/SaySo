@@ -39,6 +39,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         stateItem.isEnabled = false
         toggleItem = item("Start dictation", action: #selector(toggle))
         menu.addItem(.separator())
+        _ = item("How to use Sayso…", action: #selector(showWelcome))
         _ = item("Enable microphone & speech…", action: #selector(permissions))
         _ = item("Enable automatic paste…", action: #selector(accessibility))
         cloudItem = item("Allow Apple cloud recognition", action: #selector(toggleCloud))
@@ -61,6 +62,20 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             self.stop()
         }
         installShortcut()
+        if !UserDefaults.standard.bool(forKey: "hasSeenWelcome") {
+            showWelcome()
+            UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+        }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !modalVisible && !recording && !finishing else { return false }
+        showWelcome()
+        return false
+    }
+
+    @objc private func showWelcome() {
+        show("Sayso is running", "Sayso lives in your menu bar, with no Dock icon. Click Sayso at the top of your screen to enable microphone and speech permissions, then press Control–Option–Space to start or stop dictation. Enable automatic paste from the menu if desired; otherwise paste the copied transcript yourself. Recognition stays on-device unless you explicitly allow Apple cloud recognition.")
     }
 
     private func item(_ title: String, action: Selector?) -> NSMenuItem {
