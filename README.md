@@ -28,11 +28,11 @@ Audio goes directly to the recognition request and is not saved by this app. The
 
 ## Limits and verification
 
-- A session finishes after 55 seconds to fit the legacy Apple Speech service’s bounded sessions; this is not Wispr’s longer-session cloud engine.
+- A session stops after 55 seconds and copies the partial result for manual paste to fit the legacy Apple Speech service’s bounded sessions; this is not Wispr’s longer-session cloud engine.
 - No LLM cleanup, personal dictionary, command mode, meetings, or persistent recording history.
-- Automatic paste uses the clipboard and Command-V. It only requests paste if the original application still has focus. Clipboard recovery remains available if an app rejects it. Switching fields inside one app cannot be detected; stop dictation before changing fields. Do not dictate into password fields.
+- Automatic paste uses the clipboard and Command-V. It waits up to two seconds for Control/Option/Shift/Command to be released, then only requests paste if the original application still has focus and the clipboard has not changed. Microphone changes, early recognition completion, errors and time limits recover the transcript without automatic paste. Clipboard recovery remains available if an app rejects it. Switching fields inside one app cannot be detected; stop dictation before changing fields. Do not dictate into password fields.
 - Global shortcut conflicts are reported in the menu. There is no shortcut editor yet.
-- This source was authored on Linux. **Swift compilation, macOS permission dialogs, audio recognition, shortcut delivery, and paste have not been verified on a Mac yet.** Do not treat the app as a tested release.
+- This source was authored on Linux. **GitHub’s macOS CI compiles and code-signature-checks the app. Live permission dialogs, audio recognition, shortcut delivery, and paste have not been verified on a Mac yet.** Do not treat it as a tested release until the acceptance checks below pass.
 - Portable checks: `bash -n scripts/build.sh`; Python’s `plistlib` validates the purpose strings, executable name and deployment target. These checks do not compile Swift.
 
 ## Mac acceptance check
