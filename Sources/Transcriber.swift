@@ -11,6 +11,35 @@ final class LocalTranscriber {
     private let queue = DispatchQueue(label: "sayso.whisper")
     private var context: OpaquePointer?
 
+    /// Downloads the Whisper model (~1.6 GB) and the Silero VAD model from Hugging Face into Application Support.
+    static func downloadModels(progress: @escaping (Double) -> Void, completion: @escaping (Error?) -> Void) {
+        let files: [(URL, URL)] = [
+            (URL(string: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin")!, vadURL),
+            (URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin")!, modelURL),
+        ].filter { !FileManager.default.fileExists(atPath: $0.1.path) }
+        try? FileManager.default.createDirectory(at: modelURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        func next(_ i: Int) {
+            guard i < files.count else { DispatchQueue.main.async { completion(nil) }; return }
+            let (source, destination) = files[i]
+            var observation: NSKeyValueObservation?
+            let task = URLSession.shared.downloadTask(with: source) { temp, response, error in
+                observation?.invalidate()
+                if let error = error { DispatchQueue.main.async { completion(error) }; return }
+                guard let temp = temp, (response as? HTTPURLResponse)?.statusCode == 200 else {
+                    DispatchQueue.main.async { completion(NSError(domain: "Sayso", code: 2, userInfo: [NSLocalizedDescriptionKey: "Model download failed."])) }; return
+                }
+                do { try FileManager.default.moveItem(at: temp, to: destination) } catch { DispatchQueue.main.async { completion(error) }; return }
+                next(i + 1)
+            }
+            observation = task.progress.observe(\.fractionCompleted) { p, _ in
+                let overall = (Double(i) + p.fractionCompleted) / Double(files.count)
+                DispatchQueue.main.async { progress(overall) }
+            }
+            task.resume()
+        }
+        next(0)
+    }
+
     /// Loads the model in the background so the first dictation is not delayed.
     func preload() { queue.async { _ = self.loadContext() } }
 

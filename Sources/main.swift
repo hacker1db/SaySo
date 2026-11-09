@@ -58,6 +58,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         _ = item("Open Sayso…", action: #selector(openWindow))
         _ = item("Enable microphone…", action: #selector(permissions))
+        if !LocalTranscriber.modelInstalled { _ = item("Download speech model (1.6 GB)…", action: #selector(downloadModel)) }
         _ = item("Enable automatic paste…", action: #selector(accessibility))
         isolationItem = item("Isolate my voice (lowers music slightly)", action: #selector(toggleIsolation))
         isolationItem.state = voiceIsolation ? .on : .off
@@ -120,6 +121,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         model.onCopyLast = { [weak self] in self?.copyLast() }
         model.onCloseWindow = { NSApp.keyWindow?.performClose(nil) }
         model.onQuit = { [weak self] in self?.quit() }
+        model.onDownloadModel = { [weak self] in self?.downloadModel() }
         model.onTriggerChanged = { [weak self] in
             guard let self = self else { return }
             self.gesture = TapGesture()
@@ -272,7 +274,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         guard !finishing else { return }
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { permissions(); return }
         guard LocalTranscriber.modelInstalled else {
-            show("Local Whisper model missing", "Sayso transcribes on this Mac with whisper.cpp. Download ggml-large-v3-turbo.bin to \(LocalTranscriber.modelURL.path)."); return
+            openWindow(); downloadModel(); return
         }
         let active = NSWorkspace.shared.frontmostApplication
         target = active?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? previousApp : active
@@ -409,6 +411,23 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     }
     @objc private func showLast() { show("Last transcript", lastTranscript.isEmpty ? "No transcript in this session yet." : lastTranscript) }
     @objc private func quit() { NSApp.terminate(nil) }
+
+    @objc private func downloadModel() {
+        guard model.downloadProgress == nil else { return }
+        model.downloadProgress = 0
+        setState("Downloading local Whisper model…")
+        LocalTranscriber.downloadModels(progress: { [weak self] p in
+            self?.model.downloadProgress = p
+            self?.stateItem.title = "Downloading model… \(Int(p * 100))%"
+        }, completion: { [weak self] error in
+            guard let self = self else { return }
+            self.model.downloadProgress = nil
+            self.model.refreshPermissions()
+            if let error = error { self.show("Model download failed", error.localizedDescription); self.setState("Local Whisper model missing"); return }
+            self.transcriber.preload()
+            self.setState(self.readyHint)
+        })
+    }
 
     /// ⌘W closes the window (Sayso keeps running in the menu bar); ⌘Q quits completely.
     private func installMainMenu() {

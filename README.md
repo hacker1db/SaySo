@@ -2,6 +2,27 @@
 
 A small menu-bar dictation app. **Double-tap ⌘** anywhere to start talking — no holding — and **tap ⌘ once** to finish and paste into the active app. A pill at the bottom of the screen shows a live waveform with ✕ (cancel, nothing pasted) and ✓ (finish and paste). **Control–Option–Space** always works as a backup. No paid account or API key is required.
 
+
+## Install with Homebrew
+
+```sh
+brew tap hacker1db/personal-dictation https://github.com/hacker1db/personal-dictation
+brew install --cask sayso
+```
+
+Apple Silicon, macOS 13+. Homebrew installs `whisper-cpp`; Sayso downloads its speech model (about 1.6 GB) on first use.
+
+## Releasing
+
+Push a version tag on `main`, for example `git tag v0.2.0 && git push origin v0.2.0`. `.github/workflows/release.yml` builds, signs with Developer ID (hardened runtime), notarizes and staples, signs the zip with cosign (keyless, GitHub OIDC), publishes the GitHub Release, and bumps `Casks/sayso.rb` on `main`.
+
+Repository secrets the release workflow reads (names only; values live in GitHub settings):
+
+- `MACOS_CERT_P12`: base64 of the Developer ID Application certificate exported as .p12
+- `MACOS_CERT_PASSWORD`: the .p12 export password
+- `APPLE_ID`, `APPLE_TEAM_ID`: the Apple account and team used for notarization
+- `APPLE_APP_PASSWORD`: an app-specific password for `notarytool`
+
 ## Shortcut
 
 Choose the key in **Sayso › Shortcut**: Command (either side, default), Right ⌘, Left ⌘, Right ⌥, fn/Globe, or Control–Option–Space only. A tap counts only when the key is pressed alone and released within 0.35 s; the second tap must follow within 0.4 s. Any other key, modifier, the other ⌘ key, or a mouse click during the press cancels the gesture, so ⌘C, ⌘V and ⌘-click never start or stop dictation. If you pick fn, first change macOS Dictation's “Press fn twice” shortcut, or both will start. Key gestures are observed passively (nothing is swallowed) and need the same Accessibility permission as auto-paste; without it, use Control–Option–Space.

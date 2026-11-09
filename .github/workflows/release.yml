@@ -1,0 +1,84 @@
+name: Release
+# Push a tag like v0.2.0: build, sign with Developer ID, notarize, staple, sign with cosign,
+# publish a GitHub Release, then bump Casks/sayso.rb on main.
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write   # create the release and push the cask bump
+  id-token: write   # cosign keyless signing via GitHub OIDC
+concurrency: release
+jobs:
+  release:
+    runs-on: macos-15
+    env:
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Check the tag is on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - run: git checkout "$GITHUB_SHA"
+      - run: brew install whisper-cpp cosign
+      - run: ./scripts/test.sh
+
+      - name: Import Developer ID certificate
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          pass="$(uuidgen)"
+          security create-keychain -p "$pass" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$pass" "$keychain"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$pass" "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -1)"
+          test -n "$identity"
+          echo "SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Build and sign
+        run: SAYSO_VERSION="${VERSION#v}" SAYSO_BUILD="$GITHUB_RUN_NUMBER" ./scripts/build.sh
+
+      - name: Notarize and staple
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          ditto -c -k --keepParent build/Sayso.app build/notarize.zip
+          xcrun notarytool submit build/notarize.zip --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple build/Sayso.app
+          spctl --assess --type execute --verbose build/Sayso.app
+          ditto -c -k --keepParent build/Sayso.app "build/Sayso-${VERSION}.zip"
+          shasum -a 256 "build/Sayso-${VERSION}.zip" | tee "build/Sayso-${VERSION}.zip.sha256"
+
+      - name: Sign release zip with cosign (keyless)
+        run: cosign sign-blob --yes --bundle "build/Sayso-${VERSION}.zip.sigstore.json" "build/Sayso-${VERSION}.zip"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$VERSION" --title "Sayso $VERSION" --generate-notes \
+            "build/Sayso-${VERSION}.zip" "build/Sayso-${VERSION}.zip.sha256" "build/Sayso-${VERSION}.zip.sigstore.json"
+
+      - name: Bump Homebrew cask on main
+        run: |
+          sha="$(cut -d' ' -f1 "build/Sayso-${VERSION}.zip.sha256")"
+          git checkout main
+          sed -i '' -E "s/^  version \".*\"/  version \"${VERSION#v}\"/; s/^  sha256 \".*\"/  sha256 \"${sha}\"/" Casks/sayso.rb
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(cask): sayso ${VERSION}"
+          git push origin main
+
+      - name: Remove signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" || true
