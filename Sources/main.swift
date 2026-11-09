@@ -29,8 +29,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private var dockItem: NSMenuItem!
     private var showInDock: Bool { UserDefaults.standard.bool(forKey: "showInDock") }
     private var isolationItem: NSMenuItem!
-    /// Echo cancellation + noise suppression (Apple voice processing). On unless turned off.
-    private var voiceIsolation: Bool { UserDefaults.standard.object(forKey: "voiceIsolation") as? Bool ?? true }
+    /// Echo cancellation + noise suppression (Apple voice processing). Off by default: macOS always ducks other audio while it runs.
+    private var voiceIsolation: Bool { UserDefaults.standard.bool(forKey: "voiceIsolation") }
     private let model = AppModel()
     private let pill = PillController()
     private let window = MainWindowController()
@@ -56,7 +56,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         _ = item("Open Sayso…", action: #selector(openWindow))
         _ = item("Enable microphone…", action: #selector(permissions))
         _ = item("Enable automatic paste…", action: #selector(accessibility))
-        isolationItem = item("Isolate my voice (ignore music)", action: #selector(toggleIsolation))
+        isolationItem = item("Isolate my voice (lowers music slightly)", action: #selector(toggleIsolation))
         isolationItem.state = voiceIsolation ? .on : .off
         dockItem = item("Show Dock icon", action: #selector(toggleDock))
         applyDockPolicy()
