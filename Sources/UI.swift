@@ -477,46 +477,46 @@ private extension String {
 
 // MARK: - Recording pill
 
-/// Small, quiet indicator: a translucent capsule with a few level bars. Cancel / finish appear on hover.
+/// Quiet but noticeable indicator: translucent capsule, level bars, and always-visible cancel / finish buttons.
 struct RecordingPill: View {
     @ObservedObject var model: AppModel
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 6) {
-            if hovering {
-                control("xmark", "Cancel — nothing is pasted", "Cancel dictation") { model.onCancel() }
-            }
+        HStack(spacing: 10) {
+            control("xmark", "Cancel — nothing is pasted", "Cancel dictation", primary: false) { model.onCancel() }
             Group {
                 if model.phase == .finishing {
                     HStack(spacing: 3) {
-                        ForEach(0..<3, id: \.self) { _ in Circle().fill(Color.white.opacity(0.6)).frame(width: 3, height: 3) }
+                        ForEach(0..<3, id: \.self) { _ in Circle().fill(Color.white.opacity(0.7)).frame(width: 4, height: 4) }
                     }
                 } else {
-                    LevelBars(level: max(0.12, model.level), count: 7, color: .white.opacity(0.75))
+                    LevelBars(level: max(0.12, model.level), count: 9, color: .white.opacity(0.85))
                 }
             }
-            .frame(width: 34, height: 12)
-            if hovering && model.phase == .listening {
-                control("checkmark", "Finish and paste", "Finish and paste") { model.onToggle() }
-            }
+            .frame(width: 54, height: 18)
+            control("checkmark", "Finish and paste", "Finish and paste", primary: true) { model.onToggle() }
+                .disabled(model.phase != .listening)
         }
-        .padding(.horizontal, 10).padding(.vertical, 6)
+        .padding(.horizontal, 7).padding(.vertical, 6)
         .background(Capsule().fill(.ultraThinMaterial))
-        .background(Capsule().fill(Color.black.opacity(0.35)))
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.08)))
+        .background(Capsule().fill(Color.black.opacity(0.5)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.14)))
         .environment(\.colorScheme, .dark)
-        .opacity(hovering ? 1 : 0.85)
+        .opacity(hovering ? 1 : 0.92)
         .animation(.easeOut(duration: 0.15), value: hovering)
         .onHover { hovering = $0 }
         .padding(6)
         .fixedSize()
     }
 
-    private func control(_ symbol: String, _ help: String, _ label: String, _ run: @escaping () -> Void) -> some View {
+    private func control(_ symbol: String, _ help: String, _ label: String, primary: Bool, _ run: @escaping () -> Void) -> some View {
         Button(action: run) {
-            Image(systemName: symbol).font(.system(size: 8, weight: .bold)).foregroundStyle(.white.opacity(0.85))
-                .frame(width: 16, height: 16).background(Circle().fill(Color.white.opacity(0.15)))
+            Image(systemName: symbol).font(.system(size: 10, weight: .bold))
+                .foregroundStyle(primary ? Color.black.opacity(0.85) : Color.white.opacity(0.9))
+                .frame(width: 24, height: 24)
+                .background(Circle().fill(primary ? Color.white.opacity(0.9) : Color.white.opacity(0.18)))
+                .contentShape(Circle())
         }
         .buttonStyle(.plain).help(help).accessibilityLabel(label)
     }
@@ -534,7 +534,7 @@ final class PillController {
         let panel = self.panel ?? make(model)
         self.panel = panel
         // Room for the hover controls so the capsule can grow without clipping.
-        let size = CGSize(width: 130, height: 40)
+        let size = CGSize(width: 170, height: 52)
         let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
         if let area = screen?.visibleFrame {
             panel.setFrame(NSRect(x: area.midX - size.width / 2, y: area.minY + 18, width: size.width, height: size.height), display: true)
