@@ -69,7 +69,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         audioObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] note in
             guard let self = self, let changed = note.object as? AVAudioEngine,
                   changed === self.engine, self.recording else { return }
-            NSLog("Sayso: audio configuration changed (engine running: %d)", changed.isRunning ? 1 : 0)
+            trace("audio configuration changed (engine running: %d)", changed.isRunning ? 1 : 0)
             // macOS often posts this right after the input starts; only a stopped engine is a real interruption.
             guard !changed.isRunning else { return }
             self.interruption = "The microphone configuration changed."
@@ -82,9 +82,9 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         setState(LocalTranscriber.modelInstalled ? readyHint : "Local Whisper model missing")
         transcriber.preload()
         if let seconds = selfTestSeconds {
-            NSLog("Sayso: self-test recording for %.0f s", seconds)
+            trace("self-test recording for %.0f s", seconds)
             toggle()
-            guard recording else { NSLog("Sayso: self-test could not start recording"); NSApp.terminate(nil); return }
+            guard recording else { trace("self-test could not start recording"); NSApp.terminate(nil); return }
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in self?.stop() }
             return
         }
@@ -218,7 +218,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     }
 
     @objc fileprivate func toggle() {
-        NSLog("Sayso: toggle (recording: %d, finishing: %d, modal: %d)", recording ? 1 : 0, finishing ? 1 : 0, modalVisible ? 1 : 0)
+        trace("toggle (recording: %d, finishing: %d, modal: %d)", recording ? 1 : 0, finishing ? 1 : 0, modalVisible ? 1 : 0)
         guard !modalVisible else { return }
         if recording { stop(); return }
         guard !finishing else { return }
@@ -265,7 +265,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         model.phase = .finishing
         let id = generation, samples = collector?.take() ?? []
         collector = nil
-        NSLog("Sayso: transcribing %d samples locally", samples.count)
+        trace("transcribing %d samples locally", samples.count)
         guard samples.count >= 8_000 else { complete(id: id, error: nil); return }
         transcriber.transcribe(samples) { [weak self] result in
             guard let self = self else { return }
@@ -297,11 +297,11 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         guard generation == id, recording || finishing else { return }
         let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let reason = interruption ?? (recording ? "Recording stopped unexpectedly." : nil) ?? error
-        NSLog("Sayso: complete (chars: %d, reason: %@, error: %@)", transcript.count, reason ?? "none", error ?? "none")
+        trace("complete (chars: %d, reason: %@, error: %@)", transcript.count, reason ?? "none", error ?? "none")
         generation = UUID(); let completedGeneration = generation
         cleanup()
         if selfTestSeconds != nil {
-            NSLog("Sayso: self-test transcript: %@", text.isEmpty ? "(empty)" : text)
+            trace("self-test transcript: %@", text.isEmpty ? "(empty)" : text)
             NSApp.terminate(nil); return
         }
         guard !text.isEmpty else { setState(reason == nil ? "No speech detected" : "No transcript · try again or check microphone"); return }
@@ -309,6 +309,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         model.record(words: text.split(whereSeparator: { $0.isWhitespace }).count, seconds: Date().timeIntervalSince(startedAt))
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
         if let reason = reason { setState("\(reason) Transcript copied; paste manually."); return }
+        trace("paste check (ax: %d, target: %@, front: %@)", AXIsProcessTrusted() ? 1 : 0, target?.bundleIdentifier ?? "none", NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "none")
         guard AXIsProcessTrusted(), let destination = target, !destination.isTerminated,
               destination.processIdentifier != ProcessInfo.processInfo.processIdentifier else { setState("Transcript copied · ⌘V to paste"); return }
         pasteWhenReleased(text: text, process: destination.processIdentifier, generation: completedGeneration, deadline: Date().addingTimeInterval(2))
@@ -318,12 +319,13 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         guard generation == id, !recording && !finishing else { return }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == process,
               NSPasteboard.general.string(forType: .string) == text else {
+            trace("paste skipped: focus or clipboard changed (front: %@)", NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "none")
             setState("Focus or clipboard changed · paste manually"); return
         }
         let flags = CGEventSource.flagsState(.combinedSessionState)
         let modifiers: CGEventFlags = [.maskControl, .maskAlternate, .maskShift, .maskCommand]
         if !flags.intersection(modifiers).isEmpty {
-            guard Date() < deadline else { setState("Modifiers still held · transcript copied for manual paste"); return }
+            guard Date() < deadline else { trace("paste skipped: modifiers held (flags: %llu)", flags.rawValue); setState("Modifiers still held · transcript copied for manual paste"); return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
                 self?.pasteWhenReleased(text: text, process: process, generation: id, deadline: deadline)
             }
@@ -336,6 +338,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         }
         down.flags = .maskCommand; up.flags = .maskCommand
         down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
+        trace("paste: posted Cmd-V")
         setState("Paste requested · copy last transcript if needed")
     }
 
@@ -355,6 +358,15 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         gestureMonitors.forEach(NSEvent.removeMonitor)
         transcriber.shutdown()
     }
+}
+
+/// Diagnostics (never transcript text, except in --self-test) to ~/Library/Logs/Sayso.log and stderr.
+func trace(_ format: String, _ args: CVarArg...) {
+    let line = "\(Date()) Sayso: " + String(format: format, arguments: args) + "\n"
+    FileHandle.standardError.write(line.data(using: .utf8)!)
+    let url = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0].appendingPathComponent("Logs/Sayso.log")
+    if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(line.data(using: .utf8)!); try? h.close() }
+    else { try? line.write(to: url, atomically: true, encoding: .utf8) }
 }
 
 if let i = CommandLine.arguments.firstIndex(of: "--render-previews"), CommandLine.arguments.count > i + 1 {
