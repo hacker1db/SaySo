@@ -18,7 +18,16 @@ cp Resources/Sayso.icns "$app/Contents/Resources/Sayso.icns"
 # Prefer a real certificate: macOS ties Accessibility/Microphone grants to the signature, and ad-hoc
 # signatures change on every rebuild, which silently revokes auto-paste.
 identity="${SIGNING_IDENTITY:-$(security find-identity -p codesigning -v 2>/dev/null | sed -n 's/.*"\(Apple Development:[^"]*\)".*/\1/p' | head -1)}"
-codesign --force --sign "${identity:--}" "$app"
+if [[ -n "${SAYSO_VERSION:-}" ]]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${SAYSO_VERSION}" "$app/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${SAYSO_BUILD:-1}" "$app/Contents/Info.plist"
+fi
+if [[ -n "$identity" ]]; then
+  # Hardened runtime + secure timestamp are required for notarization.
+  codesign --force --options runtime --timestamp --entitlements Sayso.entitlements --sign "$identity" "$app"
+else
+  codesign --force --sign - "$app"
+fi
 codesign --verify --strict "$app"
 echo "Built: $app"
 echo "Copy it to /Applications before granting permissions, then open it there."

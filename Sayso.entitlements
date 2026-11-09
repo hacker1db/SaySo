@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Hardened runtime (required for notarization) blocks the microphone unless declared. -->
+	<key>com.apple.security.device.audio-input</key><true/>
+	<!-- whisper.cpp and its ggml backend plugins come from Homebrew and are signed by a different team. -->
+	<key>com.apple.security.cs.disable-library-validation</key><true/>
+</dict>
+</plist>
