@@ -299,31 +299,31 @@ struct HomePage: View {
     }
 
     private var hero: some View {
-        ZStack(alignment: .leading) {
-            Theme.hero
-            LevelBars(level: 0.85, count: 22, color: Theme.honey.opacity(0.85))
-                .frame(width: 260, height: 120)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.trailing, 28)
-                .mask(LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing))
+        HStack(alignment: .center, spacing: 20) {
             VStack(alignment: .leading, spacing: 10) {
                 (Text("Talk, ") + Text("don’t type.").italic())
                     .font(.system(size: 32, weight: .regular, design: .serif))
                 HStack(spacing: 6) {
                     Text(model.trigger.isModifierGesture ? "Double-tap" : "Press")
-                    KeyCap(text: model.trigger.isModifierGesture ? model.trigger.keyCap : "⌃⌥Space")
-                    Text("anywhere. \(model.trigger.stopHint.capitalizedFirst) to paste.")
+                    KeyCap(text: model.trigger.keyCap)
+                    Text("to talk.")
                 }
                 .font(.system(size: 14))
-                .opacity(0.9)
+                Text("\(model.trigger.stopHint.capitalizedFirst) to finish and paste.")
+                    .font(.system(size: 14)).opacity(0.8)
                 Button(model.phase == .idle ? "Try it now" : "Stop & paste") { model.onToggle() }
                     .buttonStyle(SoftButton(prominent: true))
                     .padding(.top, 8)
             }
-            .foregroundStyle(.white)
-            .padding(30)
+            .layoutPriority(1)
+            Spacer(minLength: 0)
+            LevelBars(level: 0.85, count: 11, color: Theme.honey.opacity(0.85))
+                .frame(width: 110, height: 110)
         }
-        .frame(height: 230)
+        .foregroundStyle(.white)
+        .padding(30)
+        .frame(maxWidth: .infinity, minHeight: 230, maxHeight: 230)
+        .background(Theme.hero)
         .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 
@@ -380,20 +380,22 @@ struct ShortcutPage: View {
                     Button { model.trigger = t; model.onTriggerChanged() } label: {
                         HStack(spacing: 12) {
                             Text(t.keyCap)
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                                .frame(minWidth: 40).padding(.horizontal, 8).padding(.vertical, 8)
+                                .font(.system(size: 14, weight: .semibold, design: .rounded))
+                                .lineLimit(1).minimumScaleFactor(0.7)
+                                .frame(width: 76).padding(.vertical, 8)
                                 .background(RoundedRectangle(cornerRadius: 9).fill(theme.sheet))
                                 .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(theme.line))
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(t.title).font(.system(size: 14, weight: .semibold))
-                                Text(t.isModifierGesture ? "Double-tap to start · tap to finish" : "Press to start · press again to finish")
-                                    .font(.system(size: 12)).foregroundStyle(theme.muted)
+                                Text(t.title).font(.system(size: 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                                Text(t.isModifierGesture ? "Double-tap, then tap" : "Press, then press again")
+                                    .font(.system(size: 12)).foregroundStyle(theme.muted).lineLimit(1)
                             }
                             Spacer()
                             Image(systemName: model.trigger == t ? "largecircle.fill.circle" : "circle")
                                 .foregroundStyle(model.trigger == t ? Theme.ember : theme.muted)
                         }
                         .padding(14)
+                        .frame(height: 76)
                         .background(RoundedRectangle(cornerRadius: 14).fill(theme.card))
                         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(model.trigger == t ? Theme.ember : .clear, lineWidth: 1.5))
                     }
