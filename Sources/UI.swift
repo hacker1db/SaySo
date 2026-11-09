@@ -109,26 +109,22 @@ extension Color {
 // MARK: - Shared pieces
 
 /// Bars that breathe with `level` (0…1). Used in the pill (live mic) and the hero (decorative).
-struct LevelBars: View {
+/// Microphone with rings that grow with the input level. Completely still when the mic hears nothing.
+struct MicPulse: View {
     var level: Float
-    var count = 13
     var color: Color = .white
-    private static let shape: [Double] = [0.35, 0.55, 0.8, 0.6, 0.95, 0.7, 1.0, 0.75, 0.9, 0.6, 0.8, 0.5, 0.35]
+    var glyph: CGFloat = 12
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30)) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            GeometryReader { geo in
-                HStack(alignment: .center, spacing: geo.size.width / CGFloat(count) * 0.45) {
-                    ForEach(0..<count, id: \.self) { i in
-                        let wobble = 0.7 + 0.3 * sin(t * 9 + Double(i) * 1.3)
-                        let h = max(0.14, Double(level) * Self.shape[i % Self.shape.count] * wobble)
-                        Capsule().fill(color).frame(height: geo.size.height * h)
-                    }
-                }
-                .frame(maxHeight: .infinity)
-            }
+        // Ignore room noise so the rings only react to real sound.
+        let v = CGFloat(level < 0.15 ? 0 : min(1, (level - 0.15) / 0.85))
+        ZStack {
+            Circle().stroke(color.opacity(0.35 * v), lineWidth: 1.5).scaleEffect(1 + 0.9 * v)
+            Circle().stroke(color.opacity(0.6 * v), lineWidth: 1.5).scaleEffect(1 + 0.45 * v)
+            Image(systemName: "mic.fill").font(.system(size: glyph, weight: .semibold)).foregroundStyle(color)
         }
+        .frame(width: glyph * 1.9, height: glyph * 1.9)
+        .animation(.easeOut(duration: 0.12), value: v)
         .accessibilityHidden(true)
     }
 }
@@ -216,7 +212,7 @@ struct MainView: View {
     private func sidebar(_ theme: Theme) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                LevelBars(level: 0.9, count: 5, color: theme.ink).frame(width: 22, height: 20)
+                Image(systemName: "mic.fill").font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.ember).frame(width: 22, height: 20)
                 Text("Sayso").font(.system(size: 22, weight: .semibold, design: .serif))
             }
             .padding(.horizontal, 12).padding(.top, 40).padding(.bottom, 22)
@@ -322,14 +318,20 @@ struct HomePage: View {
                 .font(.system(size: 14))
                 Text("\(model.trigger.stopHint.capitalizedFirst) to finish and paste.")
                     .font(.system(size: 14)).opacity(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
                 Button(model.phase == .idle ? "Try it now" : "Stop & paste") { model.onToggle() }
                     .buttonStyle(SoftButton(prominent: true))
                     .padding(.top, 8)
             }
             .layoutPriority(1)
             Spacer(minLength: 0)
-            LevelBars(level: 0.85, count: 9, color: Theme.honey.opacity(0.85))
-                .frame(width: 72, height: 96)
+            ZStack {
+                ForEach(1...3, id: \.self) { i in
+                    Circle().stroke(Theme.honey.opacity(0.5 / Double(i)), lineWidth: 2).frame(width: 30 + CGFloat(i) * 18, height: 30 + CGFloat(i) * 18)
+                }
+                Image(systemName: "mic.fill").font(.system(size: 24, weight: .semibold)).foregroundStyle(Theme.honey)
+            }
+                .frame(width: 84, height: 84)
         }
         .foregroundStyle(.white)
         .padding(30)
@@ -505,7 +507,7 @@ struct RecordingPill: View {
                         ForEach(0..<3, id: \.self) { _ in Circle().fill(Color.white.opacity(0.7)).frame(width: 4, height: 4) }
                     }
                 } else {
-                    LevelBars(level: max(0.12, model.level), count: 9, color: .white.opacity(0.85))
+                    MicPulse(level: model.level, color: .white.opacity(0.9), glyph: 12)
                 }
             }
             .frame(width: 54, height: 18)
