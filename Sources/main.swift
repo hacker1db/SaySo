@@ -359,7 +359,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
 }
 
 if let i = CommandLine.arguments.firstIndex(of: "--render-previews"), CommandLine.arguments.count > i + 1 {
-    exit(PreviewRenderer.run(to: CommandLine.arguments[i + 1]))
+    exit(MainActor.assumeIsolated { PreviewRenderer.run(to: CommandLine.arguments[i + 1]) })
 }
 
 let app = NSApplication.shared
