@@ -29,7 +29,7 @@ Choose the key in **Sayso › Shortcut**: Command (either side, default), Right 
 
 ## Build and use
 
-Requires macOS 13+ and Xcode Command Line Tools. On your Mac:
+Requires macOS 13+, Homebrew and Xcode Command Line Tools. The build script automatically installs whisper.cpp if missing; no separate `brew install whisper-cpp` command is needed. On your Mac:
 
 ```sh
 xcode-select --install # only if not already installed
@@ -38,7 +38,7 @@ cp -R "build/Sayso.app" /Applications/
 open "/Applications/Sayso.app"
 ```
 
-1. Install whisper.cpp (`brew install whisper-cpp`) and download the model: `mkdir -p ~/Library/Application\ Support/Sayso/models && curl -L -o ~/Library/Application\ Support/Sayso/models/ggml-large-v3-turbo.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin`
+1. Sayso downloads its speech model automatically on first use (about 1.6 GB).
 1. From the **Sayso** menu, select **Enable microphone…** and grant access.
 2. Select **Enable automatic paste…**, grant Accessibility access in System Settings, then restart the app if required.
 3. Put the cursor in a normal text field in Notes, **double-tap ⌘**, speak, then **tap ⌘** (or press ⌃⌥Space before and after).

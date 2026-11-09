@@ -5,6 +5,14 @@ if [[ "$(uname -s)" != Darwin ]]; then
   echo "Build this app on macOS 13+ with Xcode Command Line Tools (xcode-select --install)." >&2
   exit 1
 fi
+if ! command -v brew >/dev/null 2>&1; then
+  echo "Homebrew is required to install Sayso's speech engine. Install it from https://brew.sh, then rerun this script." >&2
+  exit 1
+fi
+if ! brew list --versions whisper-cpp >/dev/null 2>&1; then
+  echo "Installing Sayso's local speech engine…"
+  brew install whisper-cpp
+fi
 app="$PWD/build/Sayso.app"
 mkdir -p "$app/Contents/MacOS"
 xcrun swiftc -swift-version 5 -O -target "$(uname -m)-apple-macos13.0" \
