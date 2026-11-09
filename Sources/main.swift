@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Carbon.HIToolbox
 import ApplicationServices
+import ServiceManagement
 
 final class DictationApp: NSObject, NSApplicationDelegate {
     private var status: NSStatusItem!
@@ -29,6 +30,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private var dockItem: NSMenuItem!
     private var showInDock: Bool { UserDefaults.standard.bool(forKey: "showInDock") }
     private var isolationItem: NSMenuItem!
+    private var loginItem: NSMenuItem!
     /// Echo cancellation + noise suppression (Apple voice processing). Off by default: macOS always ducks other audio while it runs.
     private var voiceIsolation: Bool { UserDefaults.standard.bool(forKey: "voiceIsolation") }
     private let model = AppModel()
@@ -59,6 +61,13 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         _ = item("Enable automatic paste…", action: #selector(accessibility))
         isolationItem = item("Isolate my voice (lowers music slightly)", action: #selector(toggleIsolation))
         isolationItem.state = voiceIsolation ? .on : .off
+        loginItem = item("Open at login (runs in background)", action: #selector(toggleLogin))
+        if !UserDefaults.standard.bool(forKey: "loginItemConfigured") {
+            // Background dictation is the point of Sayso: start at login unless the user turns it off.
+            try? SMAppService.mainApp.register()
+            UserDefaults.standard.set(true, forKey: "loginItemConfigured")
+        }
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         dockItem = item("Show Dock icon", action: #selector(toggleDock))
         applyDockPolicy()
         _ = item("Copy last transcript", action: #selector(copyLast))
@@ -176,10 +185,21 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Closing the window never quits: Sayso keeps listening for the shortcut in the background.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard !modalVisible && !recording && !finishing else { return false }
         openWindow()
         return false
+    }
+
+    @objc private func toggleLogin() {
+        do {
+            if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() } else { try SMAppService.mainApp.register() }
+        } catch { show("Could not change login item", error.localizedDescription) }
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        trace("login item status: %d", SMAppService.mainApp.status.rawValue)
     }
 
     @objc private func toggleIsolation() {
