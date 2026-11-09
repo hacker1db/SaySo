@@ -28,6 +28,9 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private var interruption: String?
     private var dockItem: NSMenuItem!
     private var showInDock: Bool { UserDefaults.standard.bool(forKey: "showInDock") }
+    private var isolationItem: NSMenuItem!
+    /// Echo cancellation + noise suppression (Apple voice processing). On unless turned off.
+    private var voiceIsolation: Bool { UserDefaults.standard.object(forKey: "voiceIsolation") as? Bool ?? true }
     private let model = AppModel()
     private let pill = PillController()
     private let window = MainWindowController()
@@ -53,6 +56,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         _ = item("Open Sayso…", action: #selector(openWindow))
         _ = item("Enable microphone…", action: #selector(permissions))
         _ = item("Enable automatic paste…", action: #selector(accessibility))
+        isolationItem = item("Isolate my voice (ignore music)", action: #selector(toggleIsolation))
+        isolationItem.state = voiceIsolation ? .on : .off
         dockItem = item("Show Dock icon", action: #selector(toggleDock))
         applyDockPolicy()
         _ = item("Copy last transcript", action: #selector(copyLast))
@@ -159,6 +164,11 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         return false
     }
 
+    @objc private func toggleIsolation() {
+        UserDefaults.standard.set(!voiceIsolation, forKey: "voiceIsolation")
+        isolationItem.state = voiceIsolation ? .on : .off
+    }
+
     @objc private func toggleDock() {
         UserDefaults.standard.set(!showInDock, forKey: "showInDock")
         applyDockPolicy()
@@ -231,7 +241,19 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         transcript = ""; interruption = nil
         engine = AVAudioEngine()
         let id = UUID(); generation = id
-        let input = engine.inputNode, format = input.outputFormat(forBus: 0)
+        let input = engine.inputNode
+        if voiceIsolation {
+            // Removes audio this Mac is playing (music) from the mic and suppresses background noise.
+            do {
+                try input.setVoiceProcessingEnabled(true)
+                if #available(macOS 14.0, *) {
+                    // Do not turn the user's music down while dictating.
+                    input.voiceProcessingOtherAudioDuckingConfiguration = .init(enableAdvancedDucking: false, duckingLevel: .min)
+                }
+            } catch { trace("voice processing unavailable: %@", error.localizedDescription) }
+        }
+        let format = input.outputFormat(forBus: 0)
+        trace("input format: %@ (isolation: %d)", format.description, input.isVoiceProcessingEnabled ? 1 : 0)
         guard format.sampleRate > 0 && format.channelCount > 0, let buffer = AudioCollector(input: format) else { show("No microphone available", "Choose a working input device in System Settings → Sound."); return }
         collector = buffer
         input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] audio, _ in

@@ -29,6 +29,8 @@ Copy/install before granting permissions; changing the bundle path or rebuilding
 
 Sayso transcribes **only on this Mac** with [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (Metal GPU) and the `ggml-large-v3-turbo` model in `~/Library/Application Support/Sayso/models`. It does not use Apple Speech or any cloud service. Recognition is English (`en`).
 
+**Isolate my voice (ignore music)** is on by default: Apple voice processing cancels audio this Mac is playing and suppresses background noise, without ducking your music. Silero VAD (`ggml-silero-v5.1.2.bin`, same folder, from https://huggingface.co/ggml-org/whisper-vad) drops non-speech before Whisper so silence is not turned into invented text. Music in the room from another device is reduced but not removed; headphones avoid the problem entirely.
+
 Audio is kept in memory only while you dictate and is discarded after transcription. The last transcript stays in memory until quitting and on the system clipboard until replaced; universal clipboard or clipboard managers can retain it. The app does not read surrounding text or take screenshots. Recording stops and transcribes automatically after ten minutes.
 
 ## Limits and verification
