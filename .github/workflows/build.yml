@@ -7,7 +7,13 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - run: ./scripts/test.sh
       - run: ./scripts/build.sh
+      - run: build/Sayso.app/Contents/MacOS/Sayso --render-previews build/previews
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Sayso-previews
+          path: build/previews
       - run: ditto -c -k --keepParent "build/Sayso.app" "build/Sayso.zip"
       - uses: actions/upload-artifact@v4
         with:

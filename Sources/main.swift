@@ -30,16 +30,25 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private var modalVisible = false
     private var interruption: String?
     private var cloudAllowed: Bool { UserDefaults.standard.bool(forKey: "allowAppleCloud") }
+    private let model = AppModel()
+    private let pill = PillController()
+    private let window = MainWindowController()
+    private var gesture = TapGesture()
+    private var gestureMonitors: [Any] = []
+    private var gestureTrusted = false
+    private var permissionTimer: Timer?
+    private var startedAt = Date()
+    private var readyHint: String { "Ready · \(model.trigger.startHint) to dictate" }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         status.button?.title = "Sayso"
         menu.autoenablesItems = false
-        stateItem = item("Ready · ⌃⌥Space to dictate", action: nil)
+        stateItem = item(readyHint, action: nil)
         stateItem.isEnabled = false
         toggleItem = item("Start dictation", action: #selector(toggle))
         menu.addItem(.separator())
-        _ = item("How to use Sayso…", action: #selector(showWelcome))
+        _ = item("Open Sayso…", action: #selector(openWindow))
         _ = item("Enable microphone & speech…", action: #selector(permissions))
         _ = item("Enable automatic paste…", action: #selector(accessibility))
         cloudItem = item("Allow Apple cloud recognition", action: #selector(toggleCloud))
@@ -62,20 +71,71 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             self.stop()
         }
         installShortcut()
+        wireModel()
+        installGestureMonitors()
+        permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.permissionTick() }
+        setState(readyHint)
         if !UserDefaults.standard.bool(forKey: "hasSeenWelcome") {
-            showWelcome()
+            openWindow()
             UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+        }
+    }
+
+    private func wireModel() {
+        model.refreshPermissions()
+        model.onToggle = { [weak self] in self?.toggle() }
+        model.onCancel = { [weak self] in self?.cancel() }
+        model.onPermissions = { [weak self] in self?.permissions() }
+        model.onAccessibility = { [weak self] in self?.accessibility() }
+        model.onToggleCloud = { [weak self] in self?.toggleCloud() }
+        model.onCopyLast = { [weak self] in self?.copyLast() }
+        model.onTriggerChanged = { [weak self] in
+            guard let self = self else { return }
+            self.gesture = TapGesture()
+            if !self.recording && !self.finishing { self.setState(self.readyHint) }
+        }
+    }
+
+    @objc private func openWindow() { window.show(model) }
+
+    private func permissionTick() {
+        model.refreshPermissions()
+        // Global key monitors only deliver once Accessibility is granted; reinstall when it flips on.
+        if model.axGranted != gestureTrusted { installGestureMonitors() }
+    }
+
+    /// Watches modifier taps system-wide (passively — nothing is swallowed). Needs Accessibility.
+    private func installGestureMonitors() {
+        gestureMonitors.forEach(NSEvent.removeMonitor)
+        gestureMonitors = []
+        gestureTrusted = AXIsProcessTrusted()
+        let mask: NSEvent.EventTypeMask = [.flagsChanged, .keyDown]
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] in self?.handleGesture($0) }) { gestureMonitors.append(m) }
+        if let m = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] in self?.handleGesture($0); return $0 }) { gestureMonitors.append(m) }
+    }
+
+    private func handleGesture(_ event: NSEvent) {
+        let trigger = model.trigger
+        guard trigger.isModifierGesture else { return }
+        guard event.type == .flagsChanged else { gesture.otherInput(); return }
+        guard trigger.keyCodes.contains(event.keyCode) else { gesture.otherInput(); return }
+        let flag: NSEvent.ModifierFlags = trigger == .fn ? .function : (trigger == .rightOption ? .option : .command)
+        let flags = event.modifierFlags.intersection([.command, .option, .control, .shift, .function])
+        if flags.contains(flag) {
+            if flags.subtracting(flag).isEmpty { gesture.triggerDown(at: event.timestamp) } else { gesture.otherInput() }
+            return
+        }
+        switch gesture.triggerUp(at: event.timestamp, active: recording) {
+        case .start where !recording && !finishing: toggle()
+        case .stop where recording: stop()
+        default: break
         }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard !modalVisible && !recording && !finishing else { return false }
-        showWelcome()
+        openWindow()
         return false
-    }
-
-    @objc private func showWelcome() {
-        show("Sayso is running", "Sayso lives in your menu bar, with no Dock icon. Click Sayso at the top of your screen to enable microphone and speech permissions, then press Control–Option–Space to start or stop dictation. Enable automatic paste from the menu if desired; otherwise paste the copied transcript yourself. Recognition stays on-device unless you explicitly allow Apple cloud recognition.")
     }
 
     private func item(_ title: String, action: Selector?) -> NSMenuItem {
@@ -97,7 +157,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         if installed != noErr || registered != noErr { setState("Shortcut unavailable — use menu to dictate") }
     }
 
-    private func setState(_ text: String) { stateItem.title = text }
+    private func setState(_ text: String) { stateItem.title = text; model.status = text }
     private func show(_ title: String, _ message: String) {
         let alert = NSAlert(); alert.messageText = title; alert.informativeText = message
         alert.addButton(withTitle: "OK")
@@ -122,7 +182,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         guard SFSpeechRecognizer.authorizationStatus() == .authorized else {
             show("Speech recognition access is needed", "Enable Sayso in System Settings → Privacy & Security → Speech Recognition."); return
         }
-        setState("Permissions ready · ⌃⌥Space to dictate")
+        model.refreshPermissions()
+        setState("Permissions ready · \(model.trigger.startHint) to dictate")
     }
 
     @objc private func accessibility() {
@@ -145,6 +206,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         guard !recording && !finishing else { return }
         UserDefaults.standard.set(!cloudAllowed, forKey: "allowAppleCloud")
         cloudItem.state = cloudAllowed ? .on : .off
+        model.cloudAllowed = cloudAllowed
     }
 
     @objc fileprivate func toggle() {
@@ -172,13 +234,23 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         let id = UUID(); generation = id
         let input = engine.inputNode, format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 && format.channelCount > 0 else { request = nil; show("No microphone available", "Choose a working input device in System Settings → Sound."); return }
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { audio, _ in buffer.append(audio) }
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] audio, _ in
+            buffer.append(audio)
+            // Mic level for the pill's waveform: RMS of the first channel, mapped from -50…-10 dB to 0…1.
+            guard let samples = audio.floatChannelData?[0], audio.frameLength > 0 else { return }
+            var sum: Float = 0
+            for i in 0..<Int(audio.frameLength) { sum += samples[i] * samples[i] }
+            let db = 20 * log10(max(sqrt(sum / Float(audio.frameLength)), 1e-6))
+            let level = min(1, max(0, (db + 50) / 40))
+            DispatchQueue.main.async { self?.model.level = level }
+        }
         tapInstalled = true
         do { engine.prepare(); try engine.start() }
         catch { cleanup(); show("Could not start recording", error.localizedDescription); return }
-        recording = true; finishing = false
+        recording = true; finishing = false; startedAt = Date()
         toggleItem.title = "Stop & paste"; status.button?.title = "● Recording"
-        setState("Listening · ⌃⌥Space to finish")
+        setState("Listening · \(model.trigger.stopHint) to finish")
+        model.phase = .listening; pill.show(model)
         cloudItem.isEnabled = false
         task = speech.recognitionTask(with: buffer) { [weak self] result, error in
             DispatchQueue.main.async {
@@ -204,6 +276,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         timeout?.cancel(); engine.stop()
         if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
         request?.endAudio(); setState("Finishing transcription…"); status.button?.title = "… Sayso"
+        model.phase = .finishing
         let id = generation
         let deadline = DispatchWorkItem { [weak self] in self?.complete(id: id, error: "Speech recognition did not finalize in time.") }
         timeout = deadline; DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: deadline)
@@ -217,6 +290,14 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         task?.cancel(); task = nil; recognizer = nil
         recording = false; finishing = false
         toggleItem.title = "Start dictation"; cloudItem.isEnabled = true; status.button?.title = "Sayso"
+        model.phase = .idle; model.level = 0; pill.hide()
+    }
+
+    /// ✕ in the pill: discard everything, paste nothing.
+    private func cancel() {
+        guard recording || finishing else { return }
+        generation = UUID(); cleanup()
+        setState("Cancelled · nothing pasted")
     }
 
     private func complete(id: UUID, error: String?) {
@@ -227,6 +308,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         cleanup()
         guard !text.isEmpty else { setState(reason == nil ? "No speech detected" : "No transcript · try again or check microphone"); return }
         lastTranscript = text
+        model.record(words: text.split(whereSeparator: { $0.isWhitespace }).count, seconds: Date().timeIntervalSince(startedAt))
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
         if let reason = reason { setState("\(reason) Transcript copied; paste manually."); return }
         guard AXIsProcessTrusted(), let destination = target, !destination.isTerminated,
@@ -272,7 +354,12 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         if let handler = handler { RemoveEventHandler(handler) }
         if let observer = activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
         if let observer = audioObserver { NotificationCenter.default.removeObserver(observer) }
+        gestureMonitors.forEach(NSEvent.removeMonitor)
     }
+}
+
+if let i = CommandLine.arguments.firstIndex(of: "--render-previews"), CommandLine.arguments.count > i + 1 {
+    exit(PreviewRenderer.run(to: CommandLine.arguments[i + 1]))
 }
 
 let app = NSApplication.shared
