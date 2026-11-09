@@ -1,6 +1,5 @@
 import AppKit
 import AVFoundation
-import Speech
 import SwiftUI
 
 // MARK: - Model
@@ -14,10 +13,9 @@ final class AppModel: ObservableObject {
     @Published var level: Float = 0
     @Published var status = "Ready"
     @Published var micGranted = false
-    @Published var speechGranted = false
+    @Published var modelReady = false
     @Published var axGranted = false
     @Published var trigger: ShortcutTrigger { didSet { save(trigger.rawValue, "trigger") } }
-    @Published var cloudAllowed: Bool
     @Published private(set) var totalWords: Int
     @Published private(set) var totalSeconds: Double
     @Published private(set) var streak: Int
@@ -28,7 +26,6 @@ final class AppModel: ObservableObject {
     var onCancel: () -> Void = {}
     var onPermissions: () -> Void = {}
     var onAccessibility: () -> Void = {}
-    var onToggleCloud: () -> Void = {}
     var onCopyLast: () -> Void = {}
     var onTriggerChanged: () -> Void = {}
 
@@ -36,7 +33,6 @@ final class AppModel: ObservableObject {
         let d = UserDefaults.standard
         self.persist = persist
         trigger = persist ? (ShortcutTrigger(rawValue: d.string(forKey: "trigger") ?? "") ?? .eitherCommand) : .eitherCommand
-        cloudAllowed = persist && d.bool(forKey: "allowAppleCloud")
         totalWords = persist ? d.integer(forKey: "statWords") : 0
         totalSeconds = persist ? d.double(forKey: "statSeconds") : 0
         streak = persist ? d.integer(forKey: "statStreak") : 0
@@ -48,7 +44,7 @@ final class AppModel: ObservableObject {
 
     func refreshPermissions() {
         micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
-        speechGranted = SFSpeechRecognizer.authorizationStatus() == .authorized
+        modelReady = LocalTranscriber.modelInstalled
         axGranted = AXIsProcessTrusted()
     }
 
@@ -74,7 +70,7 @@ final class AppModel: ObservableObject {
     static func preview() -> AppModel {
         let m = AppModel(persist: false)
         m.totalWords = 12_840; m.totalSeconds = 5_640; m.streak = 6
-        m.micGranted = true; m.speechGranted = true; m.axGranted = true
+        m.micGranted = true; m.modelReady = true; m.axGranted = true
         m.status = "Ready · Double-tap ⌘ to dictate"
         return m
     }
@@ -227,7 +223,7 @@ struct MainView: View {
                         Image(systemName: p.icon).frame(width: 18)
                         Text(p.title)
                         Spacer()
-                        if p == .permissions && !(model.micGranted && model.speechGranted && model.axGranted) {
+                        if p == .permissions && !(model.micGranted && model.modelReady && model.axGranted) {
                             Circle().fill(Theme.warn).frame(width: 7, height: 7)
                         }
                     }
@@ -279,7 +275,7 @@ struct HomePage: View {
 
             HStack(spacing: 12) {
                 check("Microphone", model.micGranted)
-                check("Speech", model.speechGranted)
+                check("Local model", model.modelReady)
                 check("Auto-paste", model.axGranted)
                 Spacer()
             }
@@ -288,7 +284,7 @@ struct HomePage: View {
                 Image(systemName: "lock.shield").font(.system(size: 22)).foregroundStyle(theme.muted)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Nothing you say is kept").font(.system(size: 15, weight: .semibold))
-                    Text("Audio goes straight to Apple Speech \(model.cloudAllowed ? "(cloud allowed)" : "on this Mac") and is never saved. Sayso keeps only word counts for the stats above — no transcript history.")
+                    Text("Audio is transcribed on this Mac by a local Whisper model and is never saved or sent anywhere. Sayso keeps only word counts for the stats above — no transcript history.")
                         .font(.system(size: 13)).foregroundStyle(theme.muted).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -427,7 +423,8 @@ struct PermissionsPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Permissions").font(.system(size: 30, weight: .semibold))
-            row("Microphone & Speech", "Needed to hear you and turn speech into text.", model.micGranted && model.speechGranted, "Enable…", model.onPermissions)
+            row("Microphone", "Needed to hear you. A local Whisper model turns speech into text on this Mac.", model.micGranted, "Enable…", model.onPermissions)
+            row("Local Whisper model", model.modelReady ? "Installed: ggml-large-v3-turbo." : "Missing. Download ggml-large-v3-turbo.bin into ~/Library/Application Support/Sayso/models.", model.modelReady, "Show folder", { NSWorkspace.shared.open(LocalTranscriber.modelURL.deletingLastPathComponent()) })
             row("Accessibility", "Lets Sayso paste for you and notice key gestures like double-tap ⌘. Without it, transcripts are copied and ⌃⌥Space still works.", model.axGranted, "Open Settings…", model.onAccessibility)
             Text("After rebuilding an ad-hoc signed copy, macOS may ask again.").font(.system(size: 12)).foregroundStyle(Theme(scheme).muted)
         }
@@ -458,9 +455,8 @@ struct PrivacyPage: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Privacy").font(.system(size: 30, weight: .semibold))
             VStack(alignment: .leading, spacing: 8) {
-                Toggle("Allow Apple cloud recognition", isOn: Binding(get: { model.cloudAllowed }, set: { _ in model.onToggleCloud() }))
-                    .font(.system(size: 15, weight: .semibold))
-                Text("Off by default: recognition must run on this Mac. Turn on only if your language has no on-device model; Apple may then process audio remotely.")
+                Text("Local only").font(.system(size: 15, weight: .semibold))
+                Text("Speech is transcribed by whisper.cpp running on this Mac. Sayso never uses Apple Speech or any cloud service.")
                     .font(.system(size: 13)).foregroundStyle(theme.muted).fixedSize(horizontal: false, vertical: true)
             }
             .padding(18).background(RoundedRectangle(cornerRadius: 16).fill(theme.card))
