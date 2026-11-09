@@ -369,7 +369,7 @@ struct ShortcutPage: View {
         let theme = Theme(scheme)
         VStack(alignment: .leading, spacing: 20) {
             Text("Shortcut").font(.system(size: 30, weight: .semibold))
-            Text("Double-tap the key to start talking — no need to hold it. Tap it once more to finish and paste. A tap only counts when the key is pressed on its own, so ⌘C, ⌘V and other shortcuts never start dictation.")
+            Text("Double-tap the key to start talking, then tap it once more to finish and paste. Or hold it down while you talk and let go to finish. Only the key on its own counts, so ⌘C, ⌘V and other shortcuts never start dictation; pressing another key while holding cancels.")
                 .font(.system(size: 14)).foregroundStyle(theme.muted).fixedSize(horizontal: false, vertical: true)
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
@@ -384,7 +384,7 @@ struct ShortcutPage: View {
                                 .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(theme.line))
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(t.title).font(.system(size: 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
-                                Text(t.isModifierGesture ? "Double-tap, then tap" : "Press, then press again")
+                                Text(t.isModifierGesture ? "Double-tap or hold" : "Press, then press again")
                                     .font(.system(size: 12)).foregroundStyle(theme.muted).lineLimit(1)
                             }
                             Spacer()
