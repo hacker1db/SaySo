@@ -477,39 +477,48 @@ private extension String {
 
 // MARK: - Recording pill
 
+/// Small, quiet indicator: a translucent capsule with a few level bars. Cancel / finish appear on hover.
 struct RecordingPill: View {
     @ObservedObject var model: AppModel
+    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button { model.onCancel() } label: {
-                Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
-                    .frame(width: 30, height: 30).background(Circle().fill(Color.white.opacity(0.2)))
+        HStack(spacing: 6) {
+            if hovering {
+                control("xmark", "Cancel — nothing is pasted", "Cancel dictation") { model.onCancel() }
             }
-            .buttonStyle(.plain).help("Cancel — nothing is pasted").accessibilityLabel("Cancel dictation")
-
             Group {
                 if model.phase == .finishing {
-                    HStack(spacing: 5) {
-                        ForEach(0..<3, id: \.self) { _ in Circle().fill(Color.white.opacity(0.7)).frame(width: 5, height: 5) }
+                    HStack(spacing: 3) {
+                        ForEach(0..<3, id: \.self) { _ in Circle().fill(Color.white.opacity(0.6)).frame(width: 3, height: 3) }
                     }
                 } else {
-                    LevelBars(level: max(0.12, model.level))
+                    LevelBars(level: max(0.12, model.level), count: 7, color: .white.opacity(0.75))
                 }
             }
-            .frame(width: 92, height: 22)
-
-            Button { model.onToggle() } label: {
-                Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundStyle(.black)
-                    .frame(width: 30, height: 30).background(Circle().fill(Color.white))
+            .frame(width: 34, height: 12)
+            if hovering && model.phase == .listening {
+                control("checkmark", "Finish and paste", "Finish and paste") { model.onToggle() }
             }
-            .buttonStyle(.plain).disabled(model.phase != .listening)
-            .help("Finish and paste").accessibilityLabel("Finish and paste")
         }
-        .padding(.horizontal, 8).padding(.vertical, 7)
-        .background(Capsule().fill(Color(hex: 0x111114).opacity(0.94)))
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.14)))
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Capsule().fill(.ultraThinMaterial))
+        .background(Capsule().fill(Color.black.opacity(0.35)))
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.08)))
+        .environment(\.colorScheme, .dark)
+        .opacity(hovering ? 1 : 0.85)
+        .animation(.easeOut(duration: 0.15), value: hovering)
+        .onHover { hovering = $0 }
+        .padding(6)
         .fixedSize()
+    }
+
+    private func control(_ symbol: String, _ help: String, _ label: String, _ run: @escaping () -> Void) -> some View {
+        Button(action: run) {
+            Image(systemName: symbol).font(.system(size: 8, weight: .bold)).foregroundStyle(.white.opacity(0.85))
+                .frame(width: 16, height: 16).background(Circle().fill(Color.white.opacity(0.15)))
+        }
+        .buttonStyle(.plain).help(help).accessibilityLabel(label)
     }
 }
 
@@ -524,7 +533,8 @@ final class PillController {
     func show(_ model: AppModel) {
         let panel = self.panel ?? make(model)
         self.panel = panel
-        let size = panel.contentView?.fittingSize ?? CGSize(width: 200, height: 44)
+        // Room for the hover controls so the capsule can grow without clipping.
+        let size = CGSize(width: 130, height: 40)
         let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
         if let area = screen?.visibleFrame {
             panel.setFrame(NSRect(x: area.midX - size.width / 2, y: area.minY + 18, width: size.width, height: size.height), display: true)
@@ -538,7 +548,7 @@ final class PillController {
         let p = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         p.isOpaque = false
         p.backgroundColor = .clear
-        p.hasShadow = true
+        p.hasShadow = false
         p.level = .statusBar
         p.becomesKeyOnlyIfNeeded = true
         p.hidesOnDeactivate = false
