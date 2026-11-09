@@ -64,7 +64,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         _ = item("Copy last transcript", action: #selector(copyLast))
         _ = item("Show last transcript…", action: #selector(showLast))
         menu.addItem(.separator())
-        _ = item("Quit", action: #selector(quit))
+        let quitItem = item("Quit Sayso completely", action: #selector(quit))
+        quitItem.keyEquivalent = "q"
         status.menu = menu
         previousApp = NSWorkspace.shared.frontmostApplication
         activationObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
@@ -82,6 +83,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             self.stop()
         }
         installShortcut()
+        installMainMenu()
         wireModel()
         installGestureMonitors()
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.permissionTick() }
@@ -107,6 +109,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         model.onPermissions = { [weak self] in self?.permissions() }
         model.onAccessibility = { [weak self] in self?.accessibility() }
         model.onCopyLast = { [weak self] in self?.copyLast() }
+        model.onCloseWindow = { NSApp.keyWindow?.performClose(nil) }
+        model.onQuit = { [weak self] in self?.quit() }
         model.onTriggerChanged = { [weak self] in
             guard let self = self else { return }
             self.gesture = TapGesture()
@@ -385,6 +389,17 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     }
     @objc private func showLast() { show("Last transcript", lastTranscript.isEmpty ? "No transcript in this session yet." : lastTranscript) }
     @objc private func quit() { NSApp.terminate(nil) }
+
+    /// ⌘W closes the window (Sayso keeps running in the menu bar); ⌘Q quits completely.
+    private func installMainMenu() {
+        let main = NSMenu(), appItem = NSMenuItem(), appMenu = NSMenu(title: "Sayso")
+        appMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        appMenu.addItem(.separator())
+        let quitItem = appMenu.addItem(withTitle: "Quit Sayso", action: #selector(quit), keyEquivalent: "q")
+        quitItem.target = self
+        appItem.submenu = appMenu; main.addItem(appItem)
+        NSApp.mainMenu = main
+    }
     func applicationWillTerminate(_ notification: Notification) {
         generation = UUID(); cleanup()
         if let hotKey = hotKey { UnregisterEventHotKey(hotKey) }
