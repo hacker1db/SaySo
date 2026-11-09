@@ -176,9 +176,11 @@ struct MainView: View {
     @ObservedObject var model: AppModel
     @State private var page: Page
     @Environment(\.colorScheme) private var scheme
+    private let scrolls: Bool // ImageRenderer draws ScrollView content blank, so previews lay out flat
 
-    init(model: AppModel, page: Page = .home) {
+    init(model: AppModel, page: Page = .home, scrolls: Bool = true) {
         self.model = model
+        self.scrolls = scrolls
         _page = State(initialValue: page)
     }
 
@@ -186,17 +188,8 @@ struct MainView: View {
         let theme = Theme(scheme)
         HStack(spacing: 0) {
             sidebar(theme)
-            ScrollView {
-                Group {
-                    switch page {
-                    case .home: HomePage(model: model, go: { page = $0 })
-                    case .shortcut: ShortcutPage(model: model)
-                    case .permissions: PermissionsPage(model: model)
-                    case .privacy: PrivacyPage(model: model)
-                    }
-                }
-                .padding(36)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Group {
+                if scrolls { ScrollView { content } } else { content.frame(maxHeight: .infinity, alignment: .top) }
             }
             .background(RoundedRectangle(cornerRadius: 22).fill(theme.sheet))
             .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(theme.line))
@@ -205,6 +198,19 @@ struct MainView: View {
         .foregroundStyle(theme.ink)
         .background(theme.canvas)
         .frame(minWidth: 860, minHeight: 580)
+    }
+
+    private var content: some View {
+        Group {
+            switch page {
+            case .home: HomePage(model: model, go: { page = $0 })
+            case .shortcut: ShortcutPage(model: model)
+            case .permissions: PermissionsPage(model: model)
+            case .privacy: PrivacyPage(model: model)
+            }
+        }
+        .padding(36)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func sidebar(_ theme: Theme) -> some View {
@@ -250,7 +256,8 @@ struct MainView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12).fill(theme.card))
+        .background(RoundedRectangle(cornerRadius: 12).fill(theme.sheet))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(theme.line))
     }
 }
 
@@ -572,9 +579,9 @@ enum PreviewRenderer {
         let model = AppModel.preview()
         let listening = AppModel.preview(); listening.phase = .listening; listening.level = 0.7
         let jobs: [(String, AnyView)] = [
-            ("home-light", AnyView(MainView(model: model).frame(width: 960, height: 640).environment(\.colorScheme, .light))),
-            ("home-dark", AnyView(MainView(model: model).frame(width: 960, height: 640).environment(\.colorScheme, .dark))),
-            ("shortcut-light", AnyView(MainView(model: model, page: .shortcut).frame(width: 960, height: 640).environment(\.colorScheme, .light))),
+            ("home-light", AnyView(MainView(model: model, scrolls: false).frame(width: 960, height: 640).environment(\.colorScheme, .light))),
+            ("home-dark", AnyView(MainView(model: model, scrolls: false).frame(width: 960, height: 640).environment(\.colorScheme, .dark))),
+            ("shortcut-light", AnyView(MainView(model: model, page: .shortcut, scrolls: false).frame(width: 960, height: 640).environment(\.colorScheme, .light))),
             ("pill-listening", AnyView(RecordingPill(model: listening).padding(24).background(Color(hex: 0x2A2A30)))),
         ]
         var failed = false
