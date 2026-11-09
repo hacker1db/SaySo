@@ -59,14 +59,18 @@ enum ShortcutTrigger: String, CaseIterable, Identifiable {
     }
 }
 
-/// Pure double-tap / single-tap recognizer for a modifier key.
+/// Pure double-tap / single-tap / hold-to-talk recognizer for a modifier key.
+/// Holding the trigger alone for `holdDelay` starts dictation; releasing it finishes. Pressing another key while
+/// holding means the user wanted a shortcut, so that recording is cancelled.
 /// A "tap" is a press and release of the trigger alone, short enough not to be a held shortcut.
 /// Any other key or modifier during the press spoils it, so ⌘C, ⌘⇧4 and friends never trigger dictation.
 struct TapGesture {
-    enum Output: Equatable { case none, start, stop }
+    enum Output: Equatable { case none, start, stop, cancel }
 
     var maxTap: TimeInterval = 0.35   // longest press that still counts as a tap
     var maxGap: TimeInterval = 0.40   // longest pause between the two taps of a double-tap
+    var holdDelay: TimeInterval = 0.50 // how long the trigger must be held alone to start hold-to-talk
+    private(set) var holdActive = false
 
     private var downAt: TimeInterval?
     private var spoiled = false
@@ -83,6 +87,7 @@ struct TapGesture {
     mutating func triggerUp(at t: TimeInterval, active: Bool) -> Output {
         guard let down = downAt else { return .none }
         downAt = nil
+        if holdActive { holdActive = false; lastTapUp = nil; return .stop }
         guard !spoiled, t - down <= maxTap else { lastTapUp = nil; return .none }
         if active { lastTapUp = nil; return .stop }
         if let last = lastTapUp, down - last <= maxGap { lastTapUp = nil; return .start }
@@ -91,8 +96,18 @@ struct TapGesture {
     }
 
     /// Any other key or modifier: the current press is no longer a clean tap, and a pending first tap is void.
-    mutating func otherInput() {
+    @discardableResult
+    mutating func otherInput() -> Output {
         if downAt != nil { spoiled = true }
         lastTapUp = nil
+        if holdActive { holdActive = false; return .cancel }
+        return .none
+    }
+
+    /// Called `holdDelay` after a press. Starts hold-to-talk if the trigger is still held alone and nothing is listening.
+    mutating func holdCheck(at t: TimeInterval, active: Bool) -> Output {
+        guard let down = downAt, !spoiled, !active, !holdActive, t - down >= holdDelay - 0.01 else { return .none }
+        holdActive = true; lastTapUp = nil
+        return .start
     }
 }

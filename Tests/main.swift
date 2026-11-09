@@ -13,6 +13,20 @@ g.triggerDown(at: 0.30); check(g.triggerUp(at: 0.38, active: false) == .start, "
 g.triggerDown(at: 5.00); check(g.triggerUp(at: 5.10, active: true) == .stop, "single tap stops while listening")
 
 // Slow second tap does not start.
+var h = TapGesture()
+h.triggerDown(at: 0); check(h.holdCheck(at: 0.5, active: false) == .start, "holding alone starts")
+check(h.triggerUp(at: 2.0, active: true) == .stop, "releasing a hold finishes")
+h = TapGesture()
+h.triggerDown(at: 0); _ = h.holdCheck(at: 0.5, active: false)
+check(h.otherInput() == .cancel, "⌘+key during hold cancels")
+check(h.triggerUp(at: 0.8, active: false) == .none, "release after cancelled hold does nothing")
+h = TapGesture()
+h.triggerDown(at: 0); h.otherInput(); check(h.holdCheck(at: 0.5, active: false) == .none, "⌘C held is not hold-to-talk")
+h = TapGesture()
+h.triggerDown(at: 0); check(h.holdCheck(at: 0.5, active: true) == .none, "hold while listening does nothing")
+h = TapGesture()
+h.triggerDown(at: 0); check(h.holdCheck(at: 0.2, active: false) == .none, "short press is not a hold")
+
 g = TapGesture()
 g.triggerDown(at: 0); _ = g.triggerUp(at: 0.1, active: false)
 g.triggerDown(at: 1.0); check(g.triggerUp(at: 1.1, active: false) == .none, "gap too long")
