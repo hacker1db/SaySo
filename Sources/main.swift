@@ -124,9 +124,13 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         let flags = event.modifierFlags.intersection([.command, .option, .control, .shift, .function])
         // Is THIS physical key down? The combined ⌘ flag stays set while the other ⌘ key is held.
         let raw = event.modifierFlags.rawValue
-        let keyDown = ShortcutTrigger.deviceMask(forKeyCode: event.keyCode).map { raw & $0 != 0 } ?? flags.contains(flag)
+        func held(_ code: UInt16) -> Bool? {
+            guard let mask = ShortcutTrigger.deviceMask(forKeyCode: code) else { return nil }
+            return (raw & mask) != 0
+        }
+        let keyDown: Bool = held(event.keyCode) ?? flags.contains(flag)
         if keyDown {
-            let otherSideHeld = trigger.keyCodes.contains(where: { $0 != event.keyCode && (ShortcutTrigger.deviceMask(forKeyCode: $0).map { raw & $0 != 0 } ?? false) })
+            let otherSideHeld = trigger.keyCodes.contains { code in code != event.keyCode && held(code) == true }
             if flags.subtracting(flag).isEmpty && !otherSideHeld { gesture.triggerDown(at: event.timestamp) } else { gesture.otherInput() }
             return
         }
