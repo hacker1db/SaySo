@@ -68,3 +68,7 @@ check(ShortcutTrigger.eitherCommand.keyCodes == [54, 55], "either command covers
 check(ShortcutTrigger.controlOptionSpace.isModifierGesture == false, "classic shortcut is not a gesture")
 check(ShortcutTrigger.rightCommand.startHint == "Double-tap right ⌘", "hint text")
 print("ShortcutTests: all checks passed")
+
+check(DictationStatistics.savedSeconds(words: 0, seconds: 0) == 0, "empty stats")
+check(DictationStatistics.savedSeconds(words: 120, seconds: 60) == 120, "savings versus 40 wpm")
+check(DictationStatistics.savedSeconds(words: 40, seconds: 120) == 0, "no negative savings")
