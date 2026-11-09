@@ -15,7 +15,10 @@ cp Info.plist "$app/Contents/Info.plist"
 mkdir -p "$app/Contents/Resources"
 cp Resources/Sayso.icns "$app/Contents/Resources/Sayso.icns"
 # A stable Developer ID is preferable for persistent permissions. Ad hoc signing supports local testing.
-codesign --force --sign "${SIGNING_IDENTITY:--}" "$app"
+# Prefer a real certificate: macOS ties Accessibility/Microphone grants to the signature, and ad-hoc
+# signatures change on every rebuild, which silently revokes auto-paste.
+identity="${SIGNING_IDENTITY:-$(security find-identity -p codesigning -v 2>/dev/null | sed -n 's/.*"\(Apple Development:[^"]*\)".*/\1/p' | head -1)}"
+codesign --force --sign "${identity:--}" "$app"
 codesign --verify --strict "$app"
 echo "Built: $app"
 echo "Copy it to /Applications before granting permissions, then open it there."
