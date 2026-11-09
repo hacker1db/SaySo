@@ -1,5 +1,8 @@
 name: Build Mac app
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
 permissions:
   contents: read
 jobs:
@@ -7,8 +10,10 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - run: brew install whisper-cpp
       - run: ./scripts/test.sh
       - run: ./scripts/build.sh
+      - run: codesign --verify --strict --deep build/Sayso.app
       - run: build/Sayso.app/Contents/MacOS/Sayso --render-previews build/previews
       - uses: actions/upload-artifact@v4
         with:

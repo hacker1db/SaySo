@@ -29,6 +29,8 @@ final class AppModel: ObservableObject {
     var onCopyLast: () -> Void = {}
     var onCloseWindow: () -> Void = {}
     var onQuit: () -> Void = {}
+    var onDownloadModel: () -> Void = {}
+    @Published var downloadProgress: Double?
     var onTriggerChanged: () -> Void = {}
 
     init(persist: Bool = true) {
@@ -436,7 +438,7 @@ struct PermissionsPage: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Permissions").font(.system(size: 30, weight: .semibold))
             row("Microphone", "Needed to hear you. A local Whisper model turns speech into text on this Mac.", model.micGranted, "Enable…", model.onPermissions)
-            row("Local Whisper model", model.modelReady ? "Installed: ggml-large-v3-turbo." : "Missing. Download ggml-large-v3-turbo.bin into ~/Library/Application Support/Sayso/models.", model.modelReady, "Show folder", { NSWorkspace.shared.open(LocalTranscriber.modelURL.deletingLastPathComponent()) })
+            row("Local Whisper model", model.modelReady ? "Installed: ggml-large-v3-turbo." : (model.downloadProgress.map { "Downloading… \(Int($0 * 100))%" } ?? "Not downloaded yet. One-time 1.6 GB download from Hugging Face; then everything runs offline."), model.modelReady, model.downloadProgress == nil ? "Download" : "Downloading…", model.onDownloadModel)
             row("Accessibility", "Lets Sayso paste for you and notice key gestures like double-tap ⌘. Without it, transcripts are copied and ⌃⌥Space still works.", model.axGranted, "Open Settings…", model.onAccessibility)
             Text("After rebuilding an ad-hoc signed copy, macOS may ask again.").font(.system(size: 12)).foregroundStyle(Theme(scheme).muted)
         }
