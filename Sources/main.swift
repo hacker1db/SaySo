@@ -1,6 +1,5 @@
 import AppKit
 import AVFoundation
-import Speech
 import Carbon.HIToolbox
 import ApplicationServices
 
@@ -9,13 +8,11 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private let menu = NSMenu()
     private var toggleItem: NSMenuItem!
     private var stateItem: NSMenuItem!
-    private var cloudItem: NSMenuItem!
     private var hotKey: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private var engine = AVAudioEngine()
-    private var request: SFSpeechAudioBufferRecognitionRequest?
-    private var task: SFSpeechRecognitionTask?
-    private var recognizer: SFSpeechRecognizer?
+    private let transcriber = LocalTranscriber()
+    private var collector: AudioCollector?
     private var tapInstalled = false
     private var recording = false
     private var finishing = false
@@ -29,7 +26,6 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private var audioObserver: NSObjectProtocol?
     private var modalVisible = false
     private var interruption: String?
-    private var cloudAllowed: Bool { UserDefaults.standard.bool(forKey: "allowAppleCloud") }
     private var dockItem: NSMenuItem!
     private var showInDock: Bool { UserDefaults.standard.bool(forKey: "showInDock") }
     private let model = AppModel()
@@ -51,10 +47,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         toggleItem = item("Start dictation", action: #selector(toggle))
         menu.addItem(.separator())
         _ = item("Open Sayso…", action: #selector(openWindow))
-        _ = item("Enable microphone & speech…", action: #selector(permissions))
+        _ = item("Enable microphone…", action: #selector(permissions))
         _ = item("Enable automatic paste…", action: #selector(accessibility))
-        cloudItem = item("Allow Apple cloud recognition", action: #selector(toggleCloud))
-        cloudItem.state = cloudAllowed ? .on : .off
         dockItem = item("Show Dock icon", action: #selector(toggleDock))
         applyDockPolicy()
         _ = item("Copy last transcript", action: #selector(copyLast))
@@ -71,6 +65,9 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         audioObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] note in
             guard let self = self, let changed = note.object as? AVAudioEngine,
                   changed === self.engine, self.recording else { return }
+            NSLog("Sayso: audio configuration changed (engine running: %d)", changed.isRunning ? 1 : 0)
+            // macOS often posts this right after the input starts; only a stopped engine is a real interruption.
+            guard !changed.isRunning else { return }
             self.interruption = "The microphone configuration changed."
             self.stop()
         }
@@ -78,7 +75,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         wireModel()
         installGestureMonitors()
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.permissionTick() }
-        setState(readyHint)
+        setState(LocalTranscriber.modelInstalled ? readyHint : "Local Whisper model missing")
+        transcriber.preload()
         if !UserDefaults.standard.bool(forKey: "hasSeenWelcome") {
             openWindow()
             UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
@@ -91,7 +89,6 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         model.onCancel = { [weak self] in self?.cancel() }
         model.onPermissions = { [weak self] in self?.permissions() }
         model.onAccessibility = { [weak self] in self?.accessibility() }
-        model.onToggleCloud = { [weak self] in self?.toggleCloud() }
         model.onCopyLast = { [weak self] in self?.copyLast() }
         model.onTriggerChanged = { [weak self] in
             guard let self = self else { return }
@@ -199,12 +196,6 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         if AVCaptureDevice.authorizationStatus(for: .audio) != .authorized {
             show("Microphone access is needed", "Enable Sayso in System Settings → Privacy & Security → Microphone, then reopen the app."); return
         }
-        if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
-            SFSpeechRecognizer.requestAuthorization { [weak self] _ in DispatchQueue.main.async { self?.permissions() } }; return
-        }
-        guard SFSpeechRecognizer.authorizationStatus() == .authorized else {
-            show("Speech recognition access is needed", "Enable Sayso in System Settings → Privacy & Security → Speech Recognition."); return
-        }
         model.refreshPermissions()
         setState("Permissions ready · \(model.trigger.startHint) to dictate")
     }
@@ -215,49 +206,24 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         if !trusted { show("Enable automatic paste", "Allow Sayso in System Settings → Privacy & Security → Accessibility. Restart the app if macOS asks. Without this permission your transcript is still copied for manual paste.") }
     }
 
-    @objc private func toggleCloud() {
-        guard !recording && !finishing else { return }
-        if !cloudAllowed {
-            let alert = NSAlert(); alert.messageText = "Allow Apple cloud speech recognition?"
-            alert.informativeText = "If local recognition is unavailable, your microphone audio may be sent to Apple for transcription. Leave this disabled to require on-device recognition."
-            alert.addButton(withTitle: "Allow"); alert.addButton(withTitle: "Keep on-device only")
-            modalVisible = true
-            let response = alert.runModal()
-            modalVisible = false
-            guard response == .alertFirstButtonReturn else { return }
-        }
-        guard !recording && !finishing else { return }
-        UserDefaults.standard.set(!cloudAllowed, forKey: "allowAppleCloud")
-        cloudItem.state = cloudAllowed ? .on : .off
-        model.cloudAllowed = cloudAllowed
-    }
-
     @objc fileprivate func toggle() {
+        NSLog("Sayso: toggle (recording: %d, finishing: %d, modal: %d)", recording ? 1 : 0, finishing ? 1 : 0, modalVisible ? 1 : 0)
         guard !modalVisible else { return }
         if recording { stop(); return }
         guard !finishing else { return }
-        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
-              SFSpeechRecognizer.authorizationStatus() == .authorized else { permissions(); return }
-        let locales = [Locale.current.identifier] + Locale.preferredLanguages
-        guard let speech = locales.lazy.compactMap({ SFSpeechRecognizer(locale: Locale(identifier: $0)) }).first else {
-            show("Language unavailable", "Apple Speech does not support your preferred system languages."); return
+        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { permissions(); return }
+        guard LocalTranscriber.modelInstalled else {
+            show("Local Whisper model missing", "Sayso transcribes on this Mac with whisper.cpp. Download ggml-large-v3-turbo.bin to \(LocalTranscriber.modelURL.path)."); return
         }
-        if !speech.supportsOnDeviceRecognition && !cloudAllowed {
-            show("On-device recognition unavailable", "This Mac or language does not support Apple’s on-device recognizer. Download the language assets if available, or explicitly enable Apple cloud recognition from the menu."); return
-        }
-        guard speech.isAvailable else { show("Speech recognition unavailable", "Apple Speech is temporarily unavailable. Check your language downloads or network if cloud recognition is enabled."); return }
         let active = NSWorkspace.shared.frontmostApplication
         target = active?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? previousApp : active
-        let buffer = SFSpeechAudioBufferRecognitionRequest()
-        buffer.shouldReportPartialResults = true
-        buffer.requiresOnDeviceRecognition = speech.supportsOnDeviceRecognition
-        if #available(macOS 13.0, *) { buffer.addsPunctuation = true }
-        request = buffer; recognizer = speech; transcript = ""; interruption = nil
+        transcript = ""; interruption = nil
         engine = AVAudioEngine()
         let id = UUID(); generation = id
         let input = engine.inputNode, format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0 && format.channelCount > 0 else { request = nil; show("No microphone available", "Choose a working input device in System Settings → Sound."); return }
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] audio, _ in
+        guard format.sampleRate > 0 && format.channelCount > 0, let buffer = AudioCollector(input: format) else { show("No microphone available", "Choose a working input device in System Settings → Sound."); return }
+        collector = buffer
+        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] audio, _ in
             buffer.append(audio)
             // Mic level for the pill's waveform: RMS of the first channel, mapped from -50…-10 dB to 0…1.
             guard let samples = audio.floatChannelData?[0], audio.frameLength > 0 else { return }
@@ -274,23 +240,9 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         toggleItem.title = "Stop & paste"; status.button?.title = "● Recording"
         setState("Listening · \(model.trigger.stopHint) to finish")
         model.phase = .listening; pill.show(model)
-        cloudItem.isEnabled = false
-        task = speech.recognitionTask(with: buffer) { [weak self] result, error in
-            DispatchQueue.main.async {
-                guard let self = self, self.generation == id else { return }
-                if let result = result { self.transcript = result.bestTranscription.formattedString }
-                if result?.isFinal == true {
-                    if self.recording { self.interruption = "Speech recognition ended before you stopped." }
-                    self.complete(id: id, error: nil)
-                } else if let error = error { self.complete(id: id, error: error.localizedDescription) }
-            }
-        }
-        // Apple’s legacy recognition service has bounded sessions. Finish before the usual one-minute limit.
-        let limit = DispatchWorkItem { [weak self] in
-            self?.interruption = "The 55-second session limit was reached."
-            self?.stop()
-        }
-        timeout = limit; DispatchQueue.main.asyncAfter(deadline: .now() + 55, execute: limit)
+        // Keep memory bounded: stop and transcribe after ten minutes.
+        let limit = DispatchWorkItem { [weak self] in self?.stop() }
+        timeout = limit; DispatchQueue.main.asyncAfter(deadline: .now() + 600, execute: limit)
     }
 
     private func stop() {
@@ -298,21 +250,28 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         recording = false; finishing = true
         timeout?.cancel(); engine.stop()
         if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
-        request?.endAudio(); setState("Finishing transcription…"); status.button?.title = "… Sayso"
+        setState("Transcribing on this Mac…"); status.button?.title = "… Sayso"
         model.phase = .finishing
-        let id = generation
-        let deadline = DispatchWorkItem { [weak self] in self?.complete(id: id, error: "Speech recognition did not finalize in time.") }
-        timeout = deadline; DispatchQueue.main.asyncAfter(deadline: .now() + 8, execute: deadline)
+        let id = generation, samples = collector?.take() ?? []
+        collector = nil
+        NSLog("Sayso: transcribing %d samples locally", samples.count)
+        guard samples.count >= 8_000 else { complete(id: id, error: nil); return }
+        transcriber.transcribe(samples) { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .success(let text): self.transcript = text; self.complete(id: id, error: nil)
+            case .failure(let error): self.complete(id: id, error: error.localizedDescription)
+            }
+        }
     }
 
     private func cleanup() {
         timeout?.cancel(); timeout = nil
         engine.stop()
         if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
-        request?.endAudio(); request = nil
-        task?.cancel(); task = nil; recognizer = nil
+        collector = nil
         recording = false; finishing = false
-        toggleItem.title = "Start dictation"; cloudItem.isEnabled = true; status.button?.title = "Sayso"
+        toggleItem.title = "Start dictation"; status.button?.title = "Sayso"
         model.phase = .idle; model.level = 0; pill.hide()
     }
 
@@ -326,7 +285,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private func complete(id: UUID, error: String?) {
         guard generation == id, recording || finishing else { return }
         let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-        let reason = interruption ?? (recording ? "Speech recognition stopped unexpectedly." : nil) ?? error
+        let reason = interruption ?? (recording ? "Recording stopped unexpectedly." : nil) ?? error
+        NSLog("Sayso: complete (chars: %d, reason: %@, error: %@)", transcript.count, reason ?? "none", error ?? "none")
         generation = UUID(); let completedGeneration = generation
         cleanup()
         guard !text.isEmpty else { setState(reason == nil ? "No speech detected" : "No transcript · try again or check microphone"); return }
@@ -378,6 +338,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         if let observer = activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
         if let observer = audioObserver { NotificationCenter.default.removeObserver(observer) }
         gestureMonitors.forEach(NSEvent.removeMonitor)
+        transcriber.shutdown()
     }
 }
 

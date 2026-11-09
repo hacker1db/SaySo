@@ -17,7 +17,8 @@ cp -R "build/Sayso.app" /Applications/
 open "/Applications/Sayso.app"
 ```
 
-1. From the **Sayso** menu, select **Enable microphone & speech…** and grant both permissions.
+1. Install whisper.cpp (`brew install whisper-cpp`) and download the model: `mkdir -p ~/Library/Application\ Support/Sayso/models && curl -L -o ~/Library/Application\ Support/Sayso/models/ggml-large-v3-turbo.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin`
+1. From the **Sayso** menu, select **Enable microphone…** and grant access.
 2. Select **Enable automatic paste…**, grant Accessibility access in System Settings, then restart the app if required.
 3. Put the cursor in a normal text field in Notes, **double-tap ⌘**, speak, then **tap ⌘** (or press ⌃⌥Space before and after).
 4. Without Accessibility access, the transcript is copied: press **⌘V** yourself. **Copy last transcript** recovers the latest result.
@@ -26,13 +27,12 @@ Copy/install before granting permissions; changing the bundle path or rebuilding
 
 ## Speech and privacy
 
-Apple Speech uses your current system locale. **On-device recognition is required by default.** If that language/device cannot recognize locally, the app refuses to record until you explicitly opt into **Allow Apple cloud recognition**. It prefers on-device recognition even when cloud use is allowed. Language assets and availability depend on your Mac and macOS installation.
+Sayso transcribes **only on this Mac** with [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (Metal GPU) and the `ggml-large-v3-turbo` model in `~/Library/Application Support/Sayso/models`. It does not use Apple Speech or any cloud service. Recognition is English (`en`).
 
-Audio goes directly to the recognition request and is not saved by this app. The last transcript stays in memory until quitting and on the system clipboard until replaced; universal clipboard or clipboard managers can retain it. The app does not read surrounding text or take screenshots. With cloud mode enabled, Apple may process your audio remotely. See [Apple’s speech permission documentation](https://developer.apple.com/documentation/Speech/asking-permission-to-use-speech-recognition) and [on-device support](https://developer.apple.com/documentation/Speech/SFSpeechRecognizer/supportsOnDeviceRecognition).
+Audio is kept in memory only while you dictate and is discarded after transcription. The last transcript stays in memory until quitting and on the system clipboard until replaced; universal clipboard or clipboard managers can retain it. The app does not read surrounding text or take screenshots. Recording stops and transcribes automatically after ten minutes.
 
 ## Limits and verification
 
-- A session stops after 55 seconds and copies the partial result for manual paste to fit the legacy Apple Speech service’s bounded sessions; this is not Wispr’s longer-session cloud engine.
 - No LLM cleanup, personal dictionary, command mode, meetings, or persistent recording history.
 - Automatic paste uses the clipboard and Command-V. It waits up to two seconds for Control/Option/Shift/Command to be released, then only requests paste if the original application still has focus and the clipboard has not changed. Microphone changes, early recognition completion, errors and time limits recover the transcript without automatic paste. Clipboard recovery remains available if an app rejects it. Switching fields inside one app cannot be detected; stop dictation before changing fields. Do not dictate into password fields.
 - Global shortcut conflicts are reported in the menu. The home window (menu › **Open Sayso…**) shows permissions, the shortcut picker, privacy settings and stats. Stats are three counters (words, recording minutes, day streak) in UserDefaults; no transcript text is stored.
@@ -42,6 +42,6 @@ Audio goes directly to the recognition request and is not saved by this app. The
 
 ## Mac acceptance check
 
-Build and verify the code signature; test microphone/speech denial and approval; test on-device dictation with networking off for a supported language; test cloud opt-in if local recognition is unavailable; dictate into Notes and a browser text field; verify no auto-paste after switching apps; verify copy-last recovery; finish an empty recording; test timeout and microphone disconnect. Actual Mac results must be recorded before claiming this works end-to-end.
+Build and verify the code signature; test microphone denial and approval; test dictation with networking off; test with the model file missing; dictate into Notes and a browser text field; verify no auto-paste after switching apps; verify copy-last recovery; finish an empty recording; test timeout and microphone disconnect. Actual Mac results must be recorded before claiming this works end-to-end.
 
 This independently written app follows the documented dictation workflow. It does not contain Wispr Flow code or model assets, and does not reproduce its proprietary transcription quality.
