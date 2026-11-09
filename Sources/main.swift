@@ -36,6 +36,10 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private var gestureTrusted = false
     private var permissionTimer: Timer?
     private var startedAt = Date()
+    /// `--self-test <seconds>`: record from the microphone, transcribe locally, log the text and quit. Never copies or pastes.
+    private let selfTestSeconds: Double? = CommandLine.arguments.firstIndex(of: "--self-test").flatMap {
+        CommandLine.arguments.count > $0 + 1 ? Double(CommandLine.arguments[$0 + 1]) : nil
+    }
     private var readyHint: String { "Ready · \(model.trigger.startHint) to dictate" }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -77,6 +81,13 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.permissionTick() }
         setState(LocalTranscriber.modelInstalled ? readyHint : "Local Whisper model missing")
         transcriber.preload()
+        if let seconds = selfTestSeconds {
+            NSLog("Sayso: self-test recording for %.0f s", seconds)
+            toggle()
+            guard recording else { NSLog("Sayso: self-test could not start recording"); NSApp.terminate(nil); return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in self?.stop() }
+            return
+        }
         if !UserDefaults.standard.bool(forKey: "hasSeenWelcome") {
             openWindow()
             UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
@@ -289,6 +300,10 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         NSLog("Sayso: complete (chars: %d, reason: %@, error: %@)", transcript.count, reason ?? "none", error ?? "none")
         generation = UUID(); let completedGeneration = generation
         cleanup()
+        if selfTestSeconds != nil {
+            NSLog("Sayso: self-test transcript: %@", text.isEmpty ? "(empty)" : text)
+            NSApp.terminate(nil); return
+        }
         guard !text.isEmpty else { setState(reason == nil ? "No speech detected" : "No transcript · try again or check microphone"); return }
         lastTranscript = text
         model.record(words: text.split(whereSeparator: { $0.isWhitespace }).count, seconds: Date().timeIntervalSince(startedAt))
