@@ -155,12 +155,13 @@ struct SoftButton: ButtonStyle {
 // MARK: - Main window
 
 enum Page: String, CaseIterable, Identifiable {
-    case home, shortcut, permissions, privacy
+    case home, statistics, shortcut, permissions, privacy
     var id: String { rawValue }
-    var title: String { ["Home", "Shortcut", "Permissions", "Privacy"][Page.allCases.firstIndex(of: self)!] }
+    var title: String { ["Home", "Statistics", "Shortcut", "Permissions", "Privacy"][Page.allCases.firstIndex(of: self)!] }
     var icon: String {
         switch self {
         case .home: return "house"
+        case .statistics: return "chart.bar"
         case .shortcut: return "command"
         case .permissions: return "checkmark.shield"
         case .privacy: return "lock"
@@ -200,6 +201,7 @@ struct MainView: View {
         Group {
             switch page {
             case .home: HomePage(model: model, go: { page = $0 })
+            case .statistics: StatisticsPage(model: model)
             case .shortcut: ShortcutPage(model: model)
             case .permissions: PermissionsPage(model: model)
             case .privacy: PrivacyPage(model: model)
@@ -624,5 +626,46 @@ enum PreviewRenderer {
             print("wrote \(name).png")
         }
         return failed ? 1 : 0
+    }
+}
+
+// Lifetime totals reuse the existing local counters; no transcript history is stored.
+struct StatisticsPage: View {
+    @ObservedObject var model: AppModel
+    @Environment(\.colorScheme) private var scheme
+
+    private func duration(_ seconds: Double) -> String {
+        let minutes = Int(seconds / 60)
+        return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
+    }
+
+    var body: some View {
+        let theme = Theme(scheme)
+        VStack(alignment: .leading, spacing: 24) {
+            Text("Statistics").font(.system(size: 32, weight: .semibold, design: .serif))
+            Text("Your lifetime dictation totals on this Mac").foregroundStyle(theme.muted)
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                metric("Estimated time saved", duration(DictationStatistics.savedSeconds(words: model.totalWords, seconds: model.totalSeconds)), theme)
+                metric("Words dictated", model.totalWords.formatted(), theme)
+                metric("Dictation time", duration(model.totalSeconds), theme)
+                metric("Average words per minute", "\(model.wordsPerMinute)", theme)
+            }
+            Text("Time saved compares typing at 40 words per minute with your recorded dictation time, including transcription processing. It is an estimate, excludes editing time, and never goes below zero.")
+                .font(.callout).foregroundStyle(theme.muted)
+            if model.totalWords == 0 {
+                Text("Finish your first dictation to start tracking your savings.").foregroundStyle(theme.muted)
+            }
+            Text("Counters stay on this Mac. Reset them from Privacy; no audio or transcript history is stored.")
+                .font(.caption).foregroundStyle(theme.muted)
+        }
+    }
+
+    private func metric(_ title: String, _ value: String, _ theme: Theme) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(.callout).foregroundStyle(theme.muted)
+            Text(value).font(.system(size: 30, weight: .semibold, design: .rounded))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).padding(24)
+        .background(RoundedRectangle(cornerRadius: 16).fill(theme.card))
     }
 }

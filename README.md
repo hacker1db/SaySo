@@ -68,3 +68,7 @@ Audio is kept in memory only while you dictate and is discarded after transcript
 Build and verify the code signature; test microphone denial and approval; test dictation with networking off; test with the model file missing; dictate into Notes and a browser text field; verify no auto-paste after switching apps; verify copy-last recovery; finish an empty recording; test timeout and microphone disconnect. Actual Mac results must be recorded before claiming this works end-to-end.
 
 This independently written app follows the documented dictation workflow. It does not contain Wispr Flow code or model assets, and does not reproduce its proprietary transcription quality.
+
+## Statistics
+
+Open **Statistics** in the app window for lifetime words, dictation time, average speed, and estimated time saved versus typing at 40 words per minute. Recorded time includes transcription processing; savings exclude editing and are clamped to zero. Existing local counters carry over, and Privacy → Reset stats clears them. No transcript history is stored.
