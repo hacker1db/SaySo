@@ -1,6 +1,10 @@
 # Sayso for Mac
 
-A small menu-bar dictation app: **Control–Option–Space** starts listening; the same shortcut finishes and pastes the transcript into the active app. The menu also starts/stops dictation. No paid account or API key is required.
+A small menu-bar dictation app. **Double-tap ⌘** anywhere to start talking — no holding — and **tap ⌘ once** to finish and paste into the active app. A pill at the bottom of the screen shows a live waveform with ✕ (cancel, nothing pasted) and ✓ (finish and paste). **Control–Option–Space** always works as a backup. No paid account or API key is required.
+
+## Shortcut
+
+Choose the key in **Sayso › Shortcut**: Command (either side, default), Right ⌘, Left ⌘, Right ⌥, fn/Globe, or Control–Option–Space only. A tap counts only when the key is pressed alone and released within 0.35 s; the second tap must follow within 0.4 s. Any other key or modifier during the press cancels the gesture, so ⌘C, ⌘V and similar shortcuts never start dictation. Key gestures are observed passively (nothing is swallowed) and need the same Accessibility permission as auto-paste; without it, use Control–Option–Space.
 
 ## Build and use
 
@@ -15,7 +19,7 @@ open "/Applications/Sayso.app"
 
 1. From the **Sayso** menu, select **Enable microphone & speech…** and grant both permissions.
 2. Select **Enable automatic paste…**, grant Accessibility access in System Settings, then restart the app if required.
-3. Put the cursor in a normal text field in Notes, press **⌃⌥Space**, speak, then press **⌃⌥Space** again.
+3. Put the cursor in a normal text field in Notes, **double-tap ⌘**, speak, then **tap ⌘** (or press ⌃⌥Space before and after).
 4. Without Accessibility access, the transcript is copied: press **⌘V** yourself. **Copy last transcript** recovers the latest result.
 
 Copy/install before granting permissions; changing the bundle path or rebuilding an ad hoc signed app can make macOS require permission again. Set `SIGNING_IDENTITY` when building if you have a Developer ID certificate. This is a local build, not a notarized distribution.
@@ -31,7 +35,8 @@ Audio goes directly to the recognition request and is not saved by this app. The
 - A session stops after 55 seconds and copies the partial result for manual paste to fit the legacy Apple Speech service’s bounded sessions; this is not Wispr’s longer-session cloud engine.
 - No LLM cleanup, personal dictionary, command mode, meetings, or persistent recording history.
 - Automatic paste uses the clipboard and Command-V. It waits up to two seconds for Control/Option/Shift/Command to be released, then only requests paste if the original application still has focus and the clipboard has not changed. Microphone changes, early recognition completion, errors and time limits recover the transcript without automatic paste. Clipboard recovery remains available if an app rejects it. Switching fields inside one app cannot be detected; stop dictation before changing fields. Do not dictate into password fields.
-- Global shortcut conflicts are reported in the menu. There is no shortcut editor yet.
+- Global shortcut conflicts are reported in the menu. The home window (menu › **Open Sayso…**) shows permissions, the shortcut picker, privacy settings and stats. Stats are three counters (words, recording minutes, day streak) in UserDefaults; no transcript text is stored.
+- `scripts/test.sh` runs the tap-gesture checks; `Sayso --render-previews <dir>` renders the window and pill to PNG without touching the desktop.
 - This source was authored on Linux. **GitHub’s macOS CI compiles and code-signature-checks the app. Live permission dialogs, audio recognition, shortcut delivery, and paste have not been verified on a Mac yet.** Do not treat it as a tested release until the acceptance checks below pass.
 - Portable checks: `bash -n scripts/build.sh`; Python’s `plistlib` validates the purpose strings, executable name and deployment target. These checks do not compile Swift.
 

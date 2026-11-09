@@ -1,0 +1,42 @@
+// Assert-based self-check for the tap gesture (top-level code, so it must be main.swift). Run scripts/test.sh.
+import Foundation
+
+func check(_ condition: @autoclosure () -> Bool, _ message: String, line: Int = #line) {
+    if !condition() { print("FAIL line \(line): \(message)"); exit(1) }
+}
+
+var g = TapGesture()
+// Double-tap starts.
+g.triggerDown(at: 0.00); check(g.triggerUp(at: 0.10, active: false) == .none, "first tap only arms")
+g.triggerDown(at: 0.30); check(g.triggerUp(at: 0.38, active: false) == .start, "second quick tap starts")
+// While listening, one tap stops.
+g.triggerDown(at: 5.00); check(g.triggerUp(at: 5.10, active: true) == .stop, "single tap stops while listening")
+
+// Slow second tap does not start.
+g = TapGesture()
+g.triggerDown(at: 0); _ = g.triggerUp(at: 0.1, active: false)
+g.triggerDown(at: 1.0); check(g.triggerUp(at: 1.1, active: false) == .none, "gap too long")
+
+// A held key is not a tap.
+g = TapGesture()
+g.triggerDown(at: 0); _ = g.triggerUp(at: 0.1, active: false)
+g.triggerDown(at: 0.3); check(g.triggerUp(at: 1.2, active: false) == .none, "held press is not a tap")
+
+// ⌘C between taps: the shortcut spoils the press and voids the pending tap.
+g = TapGesture()
+g.triggerDown(at: 0); _ = g.triggerUp(at: 0.1, active: false)
+g.triggerDown(at: 0.2); g.otherInput(); check(g.triggerUp(at: 0.3, active: false) == .none, "⌘C does not start")
+g.triggerDown(at: 0.4); check(g.triggerUp(at: 0.45, active: false) == .none, "pending tap was voided by ⌘C")
+
+// ⌘V while listening does not stop dictation.
+g = TapGesture()
+g.triggerDown(at: 0); g.otherInput(); check(g.triggerUp(at: 0.1, active: true) == .none, "shortcut while listening keeps going")
+
+// Release without a recorded press is ignored.
+g = TapGesture()
+check(g.triggerUp(at: 1, active: true) == .none, "stray release ignored")
+
+check(ShortcutTrigger.eitherCommand.keyCodes == [54, 55], "either command covers both keys")
+check(ShortcutTrigger.controlOptionSpace.isModifierGesture == false, "classic shortcut is not a gesture")
+check(ShortcutTrigger.rightCommand.startHint == "Double-tap right ⌘", "hint text")
+print("ShortcutTests: all checks passed")

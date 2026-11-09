@@ -8,8 +8,8 @@ fi
 app="$PWD/build/Sayso.app"
 mkdir -p "$app/Contents/MacOS"
 xcrun swiftc -swift-version 5 -O -target "$(uname -m)-apple-macos13.0" \
-  -framework AppKit -framework AVFoundation -framework Speech -framework Carbon -framework ApplicationServices \
-  Sources/main.swift -o "$app/Contents/MacOS/Sayso"
+  -framework AppKit -framework AVFoundation -framework Speech -framework Carbon -framework ApplicationServices -framework SwiftUI \
+  Sources/*.swift -o "$app/Contents/MacOS/Sayso"
 cp Info.plist "$app/Contents/Info.plist"
 # A stable Developer ID is preferable for persistent permissions. Ad hoc signing supports local testing.
 codesign --force --sign "${SIGNING_IDENTITY:--}" "$app"
