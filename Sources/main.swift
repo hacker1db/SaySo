@@ -109,7 +109,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         gestureMonitors.forEach(NSEvent.removeMonitor)
         gestureMonitors = []
         gestureTrusted = AXIsProcessTrusted()
-        let mask: NSEvent.EventTypeMask = [.flagsChanged, .keyDown]
+        // Clicks are watched too so ⌘-click never counts as a tap. Nothing is swallowed or recorded.
+        let mask: NSEvent.EventTypeMask = [.flagsChanged, .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
         if let m = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] in self?.handleGesture($0) }) { gestureMonitors.append(m) }
         if let m = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] in self?.handleGesture($0); return $0 }) { gestureMonitors.append(m) }
     }
@@ -121,8 +122,12 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         guard trigger.keyCodes.contains(event.keyCode) else { gesture.otherInput(); return }
         let flag: NSEvent.ModifierFlags = trigger == .fn ? .function : (trigger == .rightOption ? .option : .command)
         let flags = event.modifierFlags.intersection([.command, .option, .control, .shift, .function])
-        if flags.contains(flag) {
-            if flags.subtracting(flag).isEmpty { gesture.triggerDown(at: event.timestamp) } else { gesture.otherInput() }
+        // Is THIS physical key down? The combined ⌘ flag stays set while the other ⌘ key is held.
+        let raw = event.modifierFlags.rawValue
+        let keyDown = ShortcutTrigger.deviceMask(forKeyCode: event.keyCode).map { raw & $0 != 0 } ?? flags.contains(flag)
+        if keyDown {
+            let otherSideHeld = trigger.keyCodes.contains(where: { $0 != event.keyCode && (ShortcutTrigger.deviceMask(forKeyCode: $0).map { raw & $0 != 0 } ?? false) })
+            if flags.subtracting(flag).isEmpty && !otherSideHeld { gesture.triggerDown(at: event.timestamp) } else { gesture.otherInput() }
             return
         }
         switch gesture.triggerUp(at: event.timestamp, active: recording) {

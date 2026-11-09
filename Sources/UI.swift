@@ -302,7 +302,8 @@ struct HomePage: View {
         HStack(alignment: .center, spacing: 20) {
             VStack(alignment: .leading, spacing: 10) {
                 (Text("Talk, ") + Text("don’t type.").italic())
-                    .font(.system(size: 32, weight: .regular, design: .serif))
+                    .font(.system(size: 30, weight: .regular, design: .serif))
+                    .fixedSize(horizontal: false, vertical: true) // wrap rather than truncate in narrow windows
                 HStack(spacing: 6) {
                     Text(model.trigger.isModifierGesture ? "Double-tap" : "Press")
                     KeyCap(text: model.trigger.keyCap)
@@ -317,8 +318,8 @@ struct HomePage: View {
             }
             .layoutPriority(1)
             Spacer(minLength: 0)
-            LevelBars(level: 0.85, count: 11, color: Theme.honey.opacity(0.85))
-                .frame(width: 110, height: 110)
+            LevelBars(level: 0.85, count: 9, color: Theme.honey.opacity(0.85))
+                .frame(width: 72, height: 96)
         }
         .foregroundStyle(.white)
         .padding(30)
@@ -382,7 +383,7 @@ struct ShortcutPage: View {
                             Text(t.keyCap)
                                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                                 .lineLimit(1).minimumScaleFactor(0.7)
-                                .frame(width: 76).padding(.vertical, 8)
+                                .frame(width: 84).padding(.vertical, 8)
                                 .background(RoundedRectangle(cornerRadius: 9).fill(theme.sheet))
                                 .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(theme.line))
                             VStack(alignment: .leading, spacing: 2) {
@@ -403,6 +404,11 @@ struct ShortcutPage: View {
                 }
             }
 
+            if model.trigger == .fn {
+                Label("If macOS Dictation is set to “Press fn twice” (System Settings › Keyboard › Dictation), both would start. Change that shortcut first.",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 13)).foregroundStyle(Theme.warn).fixedSize(horizontal: false, vertical: true)
+            }
             if model.trigger.isModifierGesture && !model.axGranted {
                 Label("Key gestures need Accessibility access (the same permission as auto-paste). Until it is granted, ⌃⌥Space still works.",
                       systemImage: "exclamationmark.triangle.fill")

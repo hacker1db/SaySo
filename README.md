@@ -4,7 +4,7 @@ A small menu-bar dictation app. **Double-tap ⌘** anywhere to start talking —
 
 ## Shortcut
 
-Choose the key in **Sayso › Shortcut**: Command (either side, default), Right ⌘, Left ⌘, Right ⌥, fn/Globe, or Control–Option–Space only. A tap counts only when the key is pressed alone and released within 0.35 s; the second tap must follow within 0.4 s. Any other key or modifier during the press cancels the gesture, so ⌘C, ⌘V and similar shortcuts never start dictation. Key gestures are observed passively (nothing is swallowed) and need the same Accessibility permission as auto-paste; without it, use Control–Option–Space.
+Choose the key in **Sayso › Shortcut**: Command (either side, default), Right ⌘, Left ⌘, Right ⌥, fn/Globe, or Control–Option–Space only. A tap counts only when the key is pressed alone and released within 0.35 s; the second tap must follow within 0.4 s. Any other key, modifier, the other ⌘ key, or a mouse click during the press cancels the gesture, so ⌘C, ⌘V and ⌘-click never start or stop dictation. If you pick fn, first change macOS Dictation's “Press fn twice” shortcut, or both will start. Key gestures are observed passively (nothing is swallowed) and need the same Accessibility permission as auto-paste; without it, use Control–Option–Space.
 
 ## Build and use
 
