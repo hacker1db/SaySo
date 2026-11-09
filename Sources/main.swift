@@ -30,6 +30,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private var modalVisible = false
     private var interruption: String?
     private var cloudAllowed: Bool { UserDefaults.standard.bool(forKey: "allowAppleCloud") }
+    private var dockItem: NSMenuItem!
+    private var showInDock: Bool { UserDefaults.standard.bool(forKey: "showInDock") }
     private let model = AppModel()
     private let pill = PillController()
     private let window = MainWindowController()
@@ -53,6 +55,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         _ = item("Enable automatic paste…", action: #selector(accessibility))
         cloudItem = item("Allow Apple cloud recognition", action: #selector(toggleCloud))
         cloudItem.state = cloudAllowed ? .on : .off
+        dockItem = item("Show Dock icon", action: #selector(toggleDock))
+        applyDockPolicy()
         _ = item("Copy last transcript", action: #selector(copyLast))
         _ = item("Show last transcript…", action: #selector(showLast))
         menu.addItem(.separator())
@@ -145,6 +149,16 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         guard !modalVisible && !recording && !finishing else { return false }
         openWindow()
         return false
+    }
+
+    @objc private func toggleDock() {
+        UserDefaults.standard.set(!showInDock, forKey: "showInDock")
+        applyDockPolicy()
+    }
+
+    private func applyDockPolicy() {
+        NSApp.setActivationPolicy(showInDock ? .regular : .accessory)
+        dockItem.state = showInDock ? .on : .off
     }
 
     private func item(_ title: String, action: Selector?) -> NSMenuItem {
