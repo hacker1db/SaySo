@@ -35,6 +35,17 @@ enum ShortcutTrigger: String, CaseIterable, Identifiable {
     var startHint: String { isModifierGesture ? "Double-tap \(keyCap)" : "Press \(keyCap)" }
     var stopHint: String { isModifierGesture ? "tap \(keyCap) once" : "press \(keyCap) again" }
 
+    /// Device-dependent modifier bit for one physical key (left/right are reported separately).
+    static func deviceMask(forKeyCode code: UInt16) -> UInt? {
+        switch code {
+        case 55: return 0x08  // left ⌘
+        case 54: return 0x10  // right ⌘
+        case 58: return 0x20  // left ⌥
+        case 61: return 0x40  // right ⌥
+        default: return nil
+        }
+    }
+
     /// Hardware key codes (kVK_*) that count as this trigger in flags-changed events.
     var keyCodes: Set<UInt16> {
         switch self {
@@ -62,6 +73,8 @@ struct TapGesture {
     private var lastTapUp: TimeInterval?
 
     mutating func triggerDown(at t: TimeInterval) {
+        // A second press while one is held (e.g. both ⌘ keys) is never a clean tap, and must not clear a spoil.
+        if downAt != nil { spoiled = true; lastTapUp = nil; return }
         downAt = t
         spoiled = false
     }

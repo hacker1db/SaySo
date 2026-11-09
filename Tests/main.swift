@@ -32,6 +32,20 @@ g.triggerDown(at: 0.4); check(g.triggerUp(at: 0.45, active: false) == .none, "pe
 g = TapGesture()
 g.triggerDown(at: 0); g.otherInput(); check(g.triggerUp(at: 0.1, active: true) == .none, "shortcut while listening keeps going")
 
+// Both ⌘ keys overlapping (hold left ⌘, ⌘C, tap right ⌘): never a clean tap, spoil survives.
+g = TapGesture()
+g.triggerDown(at: 0); g.otherInput(); g.triggerDown(at: 0.1)
+check(g.triggerUp(at: 0.15, active: true) == .none, "overlapping command keys do not stop")
+g = TapGesture()
+g.triggerDown(at: 0); g.triggerDown(at: 0.05)
+check(g.triggerUp(at: 0.1, active: true) == .none, "two keys down at once is not a tap")
+
+// ⌘-click: the click (reported as other input) spoils the press.
+g = TapGesture()
+g.triggerDown(at: 0); g.otherInput(); check(g.triggerUp(at: 0.2, active: true) == .none, "⌘-click does not stop")
+
+check(ShortcutTrigger.deviceMask(forKeyCode: 54) == 0x10 && ShortcutTrigger.deviceMask(forKeyCode: 55) == 0x08, "device masks")
+
 // Release without a recorded press is ignored.
 g = TapGesture()
 check(g.triggerUp(at: 1, active: true) == .none, "stray release ignored")
