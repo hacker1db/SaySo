@@ -37,6 +37,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private var gesture = TapGesture()
     private var gestureMonitors: [Any] = []
     private var gestureTrusted = false
+    private var holdTimer: DispatchWorkItem?
     private var permissionTimer: Timer?
     private var startedAt = Date()
     /// `--self-test <seconds>`: record from the microphone, transcribe locally, log the text and quit. Never copies or pastes.
@@ -135,8 +136,11 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private func handleGesture(_ event: NSEvent) {
         let trigger = model.trigger
         guard trigger.isModifierGesture else { return }
-        guard event.type == .flagsChanged else { gesture.otherInput(); return }
-        guard trigger.keyCodes.contains(event.keyCode) else { gesture.otherInput(); return }
+        guard event.type == .flagsChanged, trigger.keyCodes.contains(event.keyCode) else {
+            holdTimer?.cancel()
+            if gesture.otherInput() == .cancel && recording { cancel() }
+            return
+        }
         let flag: NSEvent.ModifierFlags = trigger == .fn ? .function : (trigger == .rightOption ? .option : .command)
         let flags = event.modifierFlags.intersection([.command, .option, .control, .shift, .function])
         // Is THIS physical key down? The combined ⌘ flag stays set while the other ⌘ key is held.
@@ -148,9 +152,19 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         let keyDown: Bool = held(event.keyCode) ?? flags.contains(flag)
         if keyDown {
             let otherSideHeld = trigger.keyCodes.contains { code in code != event.keyCode && held(code) == true }
-            if flags.subtracting(flag).isEmpty && !otherSideHeld { gesture.triggerDown(at: event.timestamp) } else { gesture.otherInput() }
+            if flags.subtracting(flag).isEmpty && !otherSideHeld {
+                gesture.triggerDown(at: event.timestamp)
+                holdTimer?.cancel()
+                let check = DispatchWorkItem { [weak self] in
+                    guard let self = self else { return }
+                    if self.gesture.holdCheck(at: ProcessInfo.processInfo.systemUptime, active: self.recording || self.finishing) == .start { self.toggle() }
+                }
+                holdTimer = check
+                DispatchQueue.main.asyncAfter(deadline: .now() + gesture.holdDelay, execute: check)
+            } else if gesture.otherInput() == .cancel && recording { cancel() }
             return
         }
+        holdTimer?.cancel()
         switch gesture.triggerUp(at: event.timestamp, active: recording) {
         case .start where !recording && !finishing: toggle()
         case .stop where recording: stop()
