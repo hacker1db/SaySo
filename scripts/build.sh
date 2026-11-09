@@ -8,7 +8,7 @@ fi
 app="$PWD/build/Sayso.app"
 mkdir -p "$app/Contents/MacOS"
 xcrun swiftc -swift-version 5 -O -target "$(uname -m)-apple-macos13.0" \
-  -framework AppKit -framework AVFoundation -framework Carbon -framework ApplicationServices -framework SwiftUI \
+  -framework AppKit -framework AVFoundation -framework Carbon -framework ApplicationServices -framework SwiftUI -framework ServiceManagement \
   -import-objc-header Sources/Bridging.h -I"$(brew --prefix)/include" -L"$(brew --prefix)/lib" -lwhisper -lggml \
   Sources/*.swift -o "$app/Contents/MacOS/Sayso"
 cp Info.plist "$app/Contents/Info.plist"
