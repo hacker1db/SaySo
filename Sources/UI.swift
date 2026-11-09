@@ -27,6 +27,8 @@ final class AppModel: ObservableObject {
     var onPermissions: () -> Void = {}
     var onAccessibility: () -> Void = {}
     var onCopyLast: () -> Void = {}
+    var onCloseWindow: () -> Void = {}
+    var onQuit: () -> Void = {}
     var onTriggerChanged: () -> Void = {}
 
     init(persist: Bool = true) {
@@ -239,7 +241,17 @@ struct MainView: View {
             Button { model.onCopyLast() } label: {
                 Label("Copy last transcript", systemImage: "doc.on.clipboard").font(.system(size: 13))
             }
-            .buttonStyle(.plain).foregroundStyle(theme.muted).padding(12)
+            .buttonStyle(.plain).foregroundStyle(theme.muted).padding(.horizontal, 12).padding(.top, 12)
+            Button { model.onCloseWindow() } label: {
+                Label("Close window (keep running)", systemImage: "xmark.square").font(.system(size: 13))
+            }
+            .buttonStyle(.plain).foregroundStyle(theme.muted).padding(.horizontal, 12).padding(.top, 8)
+            .help("Sayso stays in the menu bar and the shortcut keeps working")
+            Button { model.onQuit() } label: {
+                Label("Quit Sayso", systemImage: "power").font(.system(size: 13))
+            }
+            .buttonStyle(.plain).foregroundStyle(theme.muted).padding(.horizontal, 12).padding(.vertical, 8)
+            .help("Stop Sayso completely; the shortcut stops working until you reopen it")
         }
         .padding(.horizontal, 12)
         .frame(width: 228)
