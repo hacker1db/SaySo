@@ -31,6 +31,15 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private var interruption: String?
     private var cloudAllowed: Bool { UserDefaults.standard.bool(forKey: "allowAppleCloud") }
     private var dockItem: NSMenuItem!
+    private var window: NSWindow?
+    private var statusLabel = NSTextField(labelWithString: "")
+    private var startButton = NSButton()
+    private var micLabel = NSTextField(labelWithString: "")
+    private var pasteLabel = NSTextField(labelWithString: "")
+    private var cloudBox = NSButton()
+    private var dockBox = NSButton()
+    private var history = NSTextView()
+    private var transcripts: [String] = []
     private var showInDock: Bool { UserDefaults.standard.bool(forKey: "showInDock") }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -41,6 +50,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         stateItem.isEnabled = false
         toggleItem = item("Start dictation", action: #selector(toggle))
         menu.addItem(.separator())
+        _ = item("Open Sayso…", action: #selector(showWindow))
         _ = item("How to use Sayso…", action: #selector(showWelcome))
         _ = item("Enable microphone & speech…", action: #selector(permissions))
         _ = item("Enable automatic paste…", action: #selector(accessibility))
@@ -62,24 +72,27 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         audioObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] note in
             guard let self = self, let changed = note.object as? AVAudioEngine,
                   changed === self.engine, self.recording else { return }
+            // macOS commonly posts a configuration change right after the input starts; only a stopped engine is a real interruption.
+            NSLog("Sayso: audio configuration changed (engine running: %d)", changed.isRunning ? 1 : 0)
+            guard !changed.isRunning else { return }
             self.interruption = "The microphone configuration changed."
             self.stop()
         }
         installShortcut()
-        if !UserDefaults.standard.bool(forKey: "hasSeenWelcome") {
-            showWelcome()
-            UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
-        }
+        UserDefaults.standard.set(true, forKey: "hasSeenWelcome")
+        showWindow()
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) { refreshWindow() }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        guard !modalVisible && !recording && !finishing else { return false }
-        showWelcome()
+        guard !modalVisible else { return false }
+        showWindow()
         return false
     }
 
     @objc private func showWelcome() {
-        show("Sayso is running", "Sayso lives in your menu bar; choose Show Dock icon from its menu if you also want it in the Dock. Click Sayso at the top of your screen to enable microphone and speech permissions, then press Control–Option–Space to start or stop dictation. Enable automatic paste from the menu if desired; otherwise paste the copied transcript yourself. Recognition stays on-device unless you explicitly allow Apple cloud recognition.")
+        show("Sayso is running", "Sayso lives in your menu bar; choose Show Dock icon from its menu if you also want it in the Dock. Use the Sayso window (click the Dock icon or choose Open Sayso… from the menu bar) to enable microphone and speech permissions, then press Control–Option–Space to start or stop dictation. Enable automatic paste from the menu if desired; otherwise paste the copied transcript yourself. Recognition stays on-device unless you explicitly allow Apple cloud recognition.")
     }
 
     @objc private func toggleDock() {
@@ -89,7 +102,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
 
     private func applyDockPolicy() {
         NSApp.setActivationPolicy(showInDock ? .regular : .accessory)
-        dockItem.state = showInDock ? .on : .off
+        dockItem.state = showInDock ? .on : .off; refreshWindow()
     }
 
     private func item(_ title: String, action: Selector?) -> NSMenuItem {
@@ -111,7 +124,70 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         if installed != noErr || registered != noErr { setState("Shortcut unavailable — use menu to dictate") }
     }
 
-    private func setState(_ text: String) { stateItem.title = text }
+    private func setState(_ text: String) { stateItem.title = text; refreshWindow() }
+
+    @objc private func showWindow() {
+        if window == nil { buildWindow() }
+        refreshWindow()
+        NSApp.activate(ignoringOtherApps: true)
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    private func buildWindow() {
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 560),
+                         styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        w.title = "Sayso"; w.isReleasedWhenClosed = false; w.minSize = NSSize(width: 400, height: 480)
+        func label(_ text: String, size: CGFloat = 13, bold: Bool = false, grey: Bool = false) -> NSTextField {
+            let l = NSTextField(wrappingLabelWithString: text)
+            l.font = bold ? .boldSystemFont(ofSize: size) : .systemFont(ofSize: size)
+            if grey { l.textColor = .secondaryLabelColor }
+            return l
+        }
+        func button(_ title: String, _ action: Selector) -> NSButton { NSButton(title: title, target: self, action: action) }
+        func row(_ views: [NSView]) -> NSStackView { let r = NSStackView(views: views); r.orientation = .horizontal; r.spacing = 8; return r }
+        statusLabel.font = .systemFont(ofSize: 14); statusLabel.textColor = .secondaryLabelColor
+        startButton = button("Start dictation", #selector(toggle))
+        startButton.bezelStyle = .rounded; startButton.controlSize = .large; startButton.keyEquivalent = "\r"
+        cloudBox = NSButton(checkboxWithTitle: "Allow Apple cloud recognition", target: self, action: #selector(toggleCloud))
+        dockBox = NSButton(checkboxWithTitle: "Show Dock icon", target: self, action: #selector(toggleDock))
+        history.isEditable = false; history.font = .systemFont(ofSize: 13); history.textContainerInset = NSSize(width: 6, height: 6)
+        let scroll = NSScrollView(); scroll.documentView = history; scroll.hasVerticalScroller = true; scroll.borderType = .bezelBorder
+        history.autoresizingMask = [.width]; history.isVerticallyResizable = true
+        scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 140).isActive = true
+        let stack = NSStackView(views: [
+            label("Sayso", size: 24, bold: true), statusLabel,
+            row([startButton, label("or press ⌃⌥Space (Control–Option–Space) in any app", grey: true)]),
+            label("Setup", size: 15, bold: true),
+            row([micLabel, button("Enable…", #selector(permissions))]),
+            row([pasteLabel, button("Enable…", #selector(accessibility))]),
+            label("Options", size: 15, bold: true), cloudBox, dockBox,
+            label("Transcripts this session", size: 15, bold: true), scroll,
+            row([button("Copy last transcript", #selector(copyLast)), button("How to use Sayso…", #selector(showWelcome))]),
+        ])
+        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 12
+        stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        let content = NSView(); content.addSubview(stack); w.contentView = content
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor), stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: content.topAnchor), stack.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            scroll.leadingAnchor.constraint(equalTo: stack.leadingAnchor, constant: 20), scroll.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: -20),
+        ])
+        w.center(); window = w
+    }
+
+    private func refreshWindow() {
+        guard window != nil else { return }
+        statusLabel.stringValue = stateItem.title
+        startButton.title = recording ? "Stop & paste" : (finishing ? "Finishing…" : "Start dictation")
+        startButton.isEnabled = !finishing
+        let micOK = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized && SFSpeechRecognizer.authorizationStatus() == .authorized
+        micLabel.stringValue = micOK ? "✅ Microphone & speech recognition" : "⚠️ Microphone & speech recognition not enabled"
+        pasteLabel.stringValue = AXIsProcessTrusted() ? "✅ Automatic paste (Accessibility)" : "⚠️ Automatic paste off (transcripts are still copied)"
+        cloudBox.state = cloudAllowed ? .on : .off; cloudBox.isEnabled = !recording && !finishing
+        dockBox.state = showInDock ? .on : .off
+        history.string = transcripts.isEmpty ? "No transcripts yet. They're kept only until you quit Sayso." : transcripts.reversed().joined(separator: "\n\n")
+    }
     private func show(_ title: String, _ message: String) {
         let alert = NSAlert(); alert.messageText = title; alert.informativeText = message
         alert.addButton(withTitle: "OK")
@@ -158,7 +234,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         }
         guard !recording && !finishing else { return }
         UserDefaults.standard.set(!cloudAllowed, forKey: "allowAppleCloud")
-        cloudItem.state = cloudAllowed ? .on : .off
+        cloudItem.state = cloudAllowed ? .on : .off; refreshWindow()
     }
 
     @objc fileprivate func toggle() {
@@ -230,17 +306,18 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         request?.endAudio(); request = nil
         task?.cancel(); task = nil; recognizer = nil
         recording = false; finishing = false
-        toggleItem.title = "Start dictation"; cloudItem.isEnabled = true; status.button?.title = "Sayso"
+        toggleItem.title = "Start dictation"; cloudItem.isEnabled = true; status.button?.title = "Sayso"; refreshWindow()
     }
 
     private func complete(id: UUID, error: String?) {
         guard generation == id, recording || finishing else { return }
         let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         let reason = interruption ?? (recording ? "Speech recognition stopped unexpectedly." : nil) ?? error
+        NSLog("Sayso: finished (chars: %d, reason: %@)", transcript.count, reason ?? "none")
         generation = UUID(); let completedGeneration = generation
         cleanup()
         guard !text.isEmpty else { setState(reason == nil ? "No speech detected" : "No transcript · try again or check microphone"); return }
-        lastTranscript = text
+        lastTranscript = text; transcripts.append(text); refreshWindow()
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
         if let reason = reason { setState("\(reason) Transcript copied; paste manually."); return }
         guard AXIsProcessTrusted(), let destination = target, !destination.isTerminated,
