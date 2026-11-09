@@ -10,6 +10,7 @@
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>LSUIElement</key><true/>
+<key>CFBundleIconFile</key><string>Sayso</string>
 <key>NSMicrophoneUsageDescription</key><string>Record your voice while you dictate, then stop when you finish.</string>
 <key>NSSpeechRecognitionUsageDescription</key><string>Turn your dictated speech into text. On-device recognition is required unless you explicitly enable Apple cloud recognition.</string>
 </dict></plist>
