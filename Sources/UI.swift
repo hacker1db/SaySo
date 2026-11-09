@@ -35,7 +35,8 @@ final class AppModel: ObservableObject {
     init(persist: Bool = true) {
         let d = UserDefaults.standard
         self.persist = persist
-        trigger = persist ? (ShortcutTrigger(rawValue: d.string(forKey: "trigger") ?? "") ?? .eitherCommand) : .eitherCommand
+        let savedTrigger = persist ? ShortcutTrigger(rawValue: d.string(forKey: "trigger") ?? "") : nil
+        trigger = savedTrigger == .eitherCommand ? .rightCommand : (savedTrigger ?? .rightCommand)
         cloudAllowed = persist && d.bool(forKey: "allowAppleCloud")
         totalWords = persist ? d.integer(forKey: "statWords") : 0
         totalSeconds = persist ? d.double(forKey: "statSeconds") : 0
