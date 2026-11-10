@@ -50,13 +50,13 @@ final class DictationApp: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        status.button?.title = "Sayso"
+        status.button?.title = "SaySo"
         menu.autoenablesItems = false
         stateItem = item(readyHint, action: nil)
         stateItem.isEnabled = false
         toggleItem = item("Start dictation", action: #selector(toggle))
         menu.addItem(.separator())
-        _ = item("Open Sayso…", action: #selector(openWindow))
+        _ = item("Open SaySo…", action: #selector(openWindow))
         _ = item("Enable microphone…", action: #selector(permissions))
         if !LocalTranscriber.modelInstalled { _ = item("Download speech model (1.6 GB)…", action: #selector(downloadModel)) }
         _ = item("Enable automatic paste…", action: #selector(accessibility))
@@ -64,7 +64,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         isolationItem.state = voiceIsolation ? .on : .off
         loginItem = item("Open at login (runs in background)", action: #selector(toggleLogin))
         if !UserDefaults.standard.bool(forKey: "loginItemConfigured") {
-            // Background dictation is the point of Sayso: start at login unless the user turns it off.
+            // Background dictation is the point of SaySo: start at login unless the user turns it off.
             try? SMAppService.mainApp.register()
             UserDefaults.standard.set(true, forKey: "loginItemConfigured")
         }
@@ -74,7 +74,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         _ = item("Copy last transcript", action: #selector(copyLast))
         _ = item("Show last transcript…", action: #selector(showLast))
         menu.addItem(.separator())
-        let quitItem = item("Quit Sayso completely", action: #selector(quit))
+        let quitItem = item("Quit SaySo completely", action: #selector(quit))
         quitItem.keyEquivalent = "q"
         status.menu = menu
         previousApp = NSWorkspace.shared.frontmostApplication
@@ -187,7 +187,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Closing the window never quits: Sayso keeps listening for the shortcut in the background.
+    /// Closing the window never quits: SaySo keeps listening for the shortcut in the background.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -255,7 +255,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in DispatchQueue.main.async { self?.permissions() } }; return
         }
         if AVCaptureDevice.authorizationStatus(for: .audio) != .authorized {
-            show("Microphone access is needed", "Enable Sayso in System Settings → Privacy & Security → Microphone, then reopen the app."); return
+            show("Microphone access is needed", "Enable SaySo in System Settings → Privacy & Security → Microphone, then reopen the app."); return
         }
         model.refreshPermissions()
         setState("Permissions ready · \(model.trigger.startHint) to dictate")
@@ -264,7 +264,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     @objc private func accessibility() {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         let trusted = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
-        if !trusted { show("Enable automatic paste", "Allow Sayso in System Settings → Privacy & Security → Accessibility. Restart the app if macOS asks. Without this permission your transcript is still copied for manual paste.") }
+        if !trusted { show("Enable automatic paste", "Allow SaySo in System Settings → Privacy & Security → Accessibility. Restart the app if macOS asks. Without this permission your transcript is still copied for manual paste.") }
     }
 
     @objc fileprivate func toggle() {
@@ -323,7 +323,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         recording = false; finishing = true
         timeout?.cancel(); engine.stop()
         if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
-        setState("Transcribing on this Mac…"); status.button?.title = "… Sayso"
+        setState("Transcribing on this Mac…"); status.button?.title = "… SaySo"
         model.phase = .finishing
         let id = generation, samples = collector?.take() ?? []
         collector = nil
@@ -344,7 +344,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
         collector = nil
         recording = false; finishing = false
-        toggleItem.title = "Start dictation"; status.button?.title = "Sayso"
+        toggleItem.title = "Start dictation"; status.button?.title = "SaySo"
         model.phase = .idle; model.level = 0; pill.hide()
     }
 
@@ -429,12 +429,12 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         })
     }
 
-    /// ⌘W closes the window (Sayso keeps running in the menu bar); ⌘Q quits completely.
+    /// ⌘W closes the window (SaySo keeps running in the menu bar); ⌘Q quits completely.
     private func installMainMenu() {
-        let main = NSMenu(), appItem = NSMenuItem(), appMenu = NSMenu(title: "Sayso")
+        let main = NSMenu(), appItem = NSMenuItem(), appMenu = NSMenu(title: "SaySo")
         appMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         appMenu.addItem(.separator())
-        let quitItem = appMenu.addItem(withTitle: "Quit Sayso", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = appMenu.addItem(withTitle: "Quit SaySo", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         appItem.submenu = appMenu; main.addItem(appItem)
         NSApp.mainMenu = main
@@ -452,7 +452,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
 
 /// Diagnostics (never transcript text, except in --self-test) to ~/Library/Logs/Sayso.log and stderr.
 func trace(_ format: String, _ args: CVarArg...) {
-    let line = "\(Date()) Sayso: " + String(format: format, arguments: args) + "\n"
+    let line = "\(Date()) SaySo: " + String(format: format, arguments: args) + "\n"
     FileHandle.standardError.write(line.data(using: .utf8)!)
     let url = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0].appendingPathComponent("Logs/Sayso.log")
     if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(line.data(using: .utf8)!); try? h.close() }

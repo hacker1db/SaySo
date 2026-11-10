@@ -215,7 +215,7 @@ struct MainView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Image(systemName: "mic.fill").font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.ember).frame(width: 22, height: 20)
-                Text("Sayso").font(.system(size: 22, weight: .semibold, design: .serif))
+                Text("SaySo").font(.system(size: 22, weight: .semibold, design: .serif))
             }
             .padding(.horizontal, 12).padding(.top, 40).padding(.bottom, 22)
 
@@ -246,12 +246,12 @@ struct MainView: View {
                 Label("Close window (keep running)", systemImage: "xmark.square").font(.system(size: 13))
             }
             .buttonStyle(.plain).foregroundStyle(theme.muted).padding(.horizontal, 12).padding(.top, 8)
-            .help("Sayso stays in the menu bar and the shortcut keeps working")
+            .help("SaySo stays in the menu bar and the shortcut keeps working")
             Button { model.onQuit() } label: {
-                Label("Quit Sayso", systemImage: "power").font(.system(size: 13))
+                Label("Quit SaySo", systemImage: "power").font(.system(size: 13))
             }
             .buttonStyle(.plain).foregroundStyle(theme.muted).padding(.horizontal, 12).padding(.vertical, 8)
-            .help("Stop Sayso completely; the shortcut stops working until you reopen it")
+            .help("Stop SaySo completely; the shortcut stops working until you reopen it")
         }
         .padding(.horizontal, 12)
         .frame(width: 228)
@@ -296,7 +296,7 @@ struct HomePage: View {
                 Image(systemName: "lock.shield").font(.system(size: 22)).foregroundStyle(theme.muted)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Nothing you say is kept").font(.system(size: 15, weight: .semibold))
-                    Text("Audio is transcribed on this Mac by a local Whisper model and is never saved or sent anywhere. Sayso keeps only word counts for the stats above — no transcript history.")
+                    Text("Audio is transcribed on this Mac by a local Whisper model and is never saved or sent anywhere. SaySo keeps only word counts for the stats above — no transcript history.")
                         .font(.system(size: 13)).foregroundStyle(theme.muted).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -443,7 +443,7 @@ struct PermissionsPage: View {
             Text("Permissions").font(.system(size: 30, weight: .semibold))
             row("Microphone", "Needed to hear you. A local Whisper model turns speech into text on this Mac.", model.micGranted, "Enable…", model.onPermissions)
             row("Local Whisper model", model.modelReady ? "Installed: ggml-large-v3-turbo." : (model.downloadProgress.map { "Downloading… \(Int($0 * 100))%" } ?? "Not downloaded yet. One-time 1.6 GB download from Hugging Face; then everything runs offline."), model.modelReady, model.downloadProgress == nil ? "Download" : "Downloading…", model.onDownloadModel)
-            row("Accessibility", "Lets Sayso paste for you and notice key gestures like double-tap ⌘. Without it, transcripts are copied and ⌃⌥Space still works.", model.axGranted, "Open Settings…", model.onAccessibility)
+            row("Accessibility", "Lets SaySo paste for you and notice key gestures like double-tap ⌘. Without it, transcripts are copied and ⌃⌥Space still works.", model.axGranted, "Open Settings…", model.onAccessibility)
             Text("After rebuilding an ad-hoc signed copy, macOS may ask again.").font(.system(size: 12)).foregroundStyle(Theme(scheme).muted)
         }
     }
@@ -474,7 +474,7 @@ struct PrivacyPage: View {
             Text("Privacy").font(.system(size: 30, weight: .semibold))
             VStack(alignment: .leading, spacing: 8) {
                 Text("Local only").font(.system(size: 15, weight: .semibold))
-                Text("Speech is transcribed by whisper.cpp running on this Mac. Sayso never uses Apple Speech or any cloud service.")
+                Text("Speech is transcribed by whisper.cpp running on this Mac. SaySo never uses Apple Speech or any cloud service.")
                     .font(.system(size: 13)).foregroundStyle(theme.muted).fixedSize(horizontal: false, vertical: true)
             }
             .padding(18).background(RoundedRectangle(cornerRadius: 16).fill(theme.card))
@@ -591,7 +591,7 @@ final class MainWindowController {
             w.titleVisibility = .hidden
             w.isMovableByWindowBackground = true
             w.isReleasedWhenClosed = false
-            w.title = "Sayso"
+            w.title = "SaySo"
             w.contentView = NSHostingView(rootView: MainView(model: model))
             w.center()
             window = w
