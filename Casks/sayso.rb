@@ -2,10 +2,10 @@ cask "sayso" do
   version "0.0.0"
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
 
-  url "https://github.com/hacker1db/personal-dictation/releases/download/v#{version}/Sayso-v#{version}.zip"
-  name "Sayso"
+  url "https://github.com/hacker1db/SaySo/releases/download/v#{version}/Sayso-v#{version}.zip"
+  name "SaySo"
   desc "Local, private push-to-talk dictation in the menu bar"
-  homepage "https://github.com/hacker1db/personal-dictation"
+  homepage "https://github.com/hacker1db/SaySo"
 
   livecheck do
     url :url
@@ -27,11 +27,11 @@ cask "sayso" do
   ]
 
   caveats <<~EOS
-    Sayso downloads its local Whisper speech model (about 1.6 GB) on first use.
+    SaySo downloads its local Whisper speech model (about 1.6 GB) on first use.
     Grant Microphone and Accessibility access when prompted.
     Verify a release download with cosign:
       cosign verify-blob --bundle Sayso-v#{version}.zip.sigstore.json \\
-        --certificate-identity-regexp '^https://github.com/hacker1db/personal-dictation/' \\
+        --certificate-identity-regexp '^https://github.com/hacker1db/SaySo/' \\
         --certificate-oidc-issuer https://token.actions.githubusercontent.com Sayso-v#{version}.zip
   EOS
 end

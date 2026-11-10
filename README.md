@@ -1,4 +1,4 @@
-# Sayso for Mac
+# SaySo for Mac
 
 A small menu-bar dictation app. **Double-tap ⌘** anywhere to start talking — no holding — and **tap ⌘ once** to finish and paste into the active app. A pill at the bottom of the screen shows a live waveform with ✕ (cancel, nothing pasted) and ✓ (finish and paste). **Control–Option–Space** always works as a backup. No paid account or API key is required.
 
@@ -6,11 +6,11 @@ A small menu-bar dictation app. **Double-tap ⌘** anywhere to start talking —
 ## Install with Homebrew
 
 ```sh
-brew tap hacker1db/personal-dictation https://github.com/hacker1db/personal-dictation
+brew tap hacker1db/sayso https://github.com/hacker1db/SaySo
 brew install --cask sayso
 ```
 
-Apple Silicon, macOS 13+. Homebrew installs `whisper-cpp`; Sayso downloads its speech model (about 1.6 GB) on first use.
+Apple Silicon, macOS 13+. Homebrew installs `whisper-cpp`; SaySo downloads its speech model (about 1.6 GB) on first use.
 
 ## Releasing
 
@@ -25,7 +25,7 @@ Repository secrets the release workflow reads (names only; values live in GitHub
 
 ## Shortcut
 
-Choose the key in **Sayso › Shortcut**: Command (either side, default), Right ⌘, Left ⌘, Right ⌥, fn/Globe, or Control–Option–Space only. A tap counts only when the key is pressed alone and released within 0.35 s; the second tap must follow within 0.4 s. Any other key, modifier, the other ⌘ key, or a mouse click during the press cancels the gesture, so ⌘C, ⌘V and ⌘-click never start or stop dictation. If you pick fn, first change macOS Dictation's “Press fn twice” shortcut, or both will start. Key gestures are observed passively (nothing is swallowed) and need the same Accessibility permission as auto-paste; without it, use Control–Option–Space.
+Choose the key in **SaySo › Shortcut**: Command (either side, default), Right ⌘, Left ⌘, Right ⌥, fn/Globe, or Control–Option–Space only. A tap counts only when the key is pressed alone and released within 0.35 s; the second tap must follow within 0.4 s. Any other key, modifier, the other ⌘ key, or a mouse click during the press cancels the gesture, so ⌘C, ⌘V and ⌘-click never start or stop dictation. If you pick fn, first change macOS Dictation's “Press fn twice” shortcut, or both will start. Key gestures are observed passively (nothing is swallowed) and need the same Accessibility permission as auto-paste; without it, use Control–Option–Space.
 
 ## Build and use
 
@@ -38,8 +38,8 @@ cp -R "build/Sayso.app" /Applications/
 open "/Applications/Sayso.app"
 ```
 
-1. Sayso downloads its speech model automatically on first use (about 1.6 GB).
-1. From the **Sayso** menu, select **Enable microphone…** and grant access.
+1. SaySo downloads its speech model automatically on first use (about 1.6 GB).
+1. From the **SaySo** menu, select **Enable microphone…** and grant access.
 2. Select **Enable automatic paste…**, grant Accessibility access in System Settings, then restart the app if required.
 3. Put the cursor in a normal text field in Notes, **double-tap ⌘**, speak, then **tap ⌘** (or press ⌃⌥Space before and after).
 4. Without Accessibility access, the transcript is copied: press **⌘V** yourself. **Copy last transcript** recovers the latest result.
@@ -48,9 +48,9 @@ Copy/install before granting permissions; changing the bundle path or rebuilding
 
 ## Speech and privacy
 
-Sayso transcribes **only on this Mac** with [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (Metal GPU) and the `ggml-large-v3-turbo` model in `~/Library/Application Support/Sayso/models`. It does not use Apple Speech or any cloud service. Recognition is English (`en`).
+SaySo transcribes **only on this Mac** with [whisper.cpp](https://github.com/ggml-org/whisper.cpp) (Metal GPU) and the `ggml-large-v3-turbo` model in `~/Library/Application Support/Sayso/models`. It does not use Apple Speech or any cloud service. Recognition is English (`en`).
 
-**Isolate my voice (lowers music slightly)** is off by default. When on, Apple voice processing cancels audio this Mac is playing and suppresses background noise, but macOS always lowers other audio somewhat while it runs (Sayso requests the minimum). Silero VAD (`ggml-silero-v5.1.2.bin`, same folder, from https://huggingface.co/ggml-org/whisper-vad) drops non-speech before Whisper so silence is not turned into invented text. Music in the room from another device is reduced but not removed; headphones avoid the problem entirely.
+**Isolate my voice (lowers music slightly)** is off by default. When on, Apple voice processing cancels audio this Mac is playing and suppresses background noise, but macOS always lowers other audio somewhat while it runs (SaySo requests the minimum). Silero VAD (`ggml-silero-v5.1.2.bin`, same folder, from https://huggingface.co/ggml-org/whisper-vad) drops non-speech before Whisper so silence is not turned into invented text. Music in the room from another device is reduced but not removed; headphones avoid the problem entirely.
 
 Audio is kept in memory only while you dictate and is discarded after transcription. The last transcript stays in memory until quitting and on the system clipboard until replaced; universal clipboard or clipboard managers can retain it. The app does not read surrounding text or take screenshots. Recording stops and transcribes automatically after ten minutes.
 
@@ -58,7 +58,7 @@ Audio is kept in memory only while you dictate and is discarded after transcript
 
 - No LLM cleanup, personal dictionary, command mode, meetings, or persistent recording history.
 - Automatic paste uses the clipboard and Command-V. It waits up to two seconds for Control/Option/Shift/Command to be released, then only requests paste if the original application still has focus and the clipboard has not changed. Microphone changes, early recognition completion, errors and time limits recover the transcript without automatic paste. Clipboard recovery remains available if an app rejects it. Switching fields inside one app cannot be detected; stop dictation before changing fields. Do not dictate into password fields.
-- Global shortcut conflicts are reported in the menu. The home window (menu › **Open Sayso…**) shows permissions, the shortcut picker, privacy settings and stats. Stats are three counters (words, recording minutes, day streak) in UserDefaults; no transcript text is stored.
+- Global shortcut conflicts are reported in the menu. The home window (menu › **Open SaySo…**) shows permissions, the shortcut picker, privacy settings and stats. Stats are three counters (words, recording minutes, day streak) in UserDefaults; no transcript text is stored.
 - `scripts/test.sh` runs the tap-gesture checks; `Sayso --render-previews <dir>` renders the window and pill to PNG without touching the desktop.
 - This source was authored on Linux. **GitHub’s macOS CI compiles and code-signature-checks the app. Live permission dialogs, audio recognition, shortcut delivery, and paste have not been verified on a Mac yet.** Do not treat it as a tested release until the acceptance checks below pass.
 - Portable checks: `bash -n scripts/build.sh`; Python’s `plistlib` validates the purpose strings, executable name and deployment target. These checks do not compile Swift.
@@ -72,3 +72,5 @@ This independently written app follows the documented dictation workflow. It doe
 ## Statistics
 
 Open **Statistics** in the app window for lifetime words, dictation time, average speed, and estimated time saved versus typing at 40 words per minute. Recorded time includes transcription processing; savings exclude editing and are clamped to zero. Existing local counters carry over, and Privacy → Reset stats clears them. No transcript history is stored.
+
+The bundle identifier (`dev.hacker1db.personal-dictation`), `Sayso.app` executable and release filenames, and existing data paths retain their original spelling for compatibility with installed copies.

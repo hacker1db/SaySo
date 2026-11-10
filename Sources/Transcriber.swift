@@ -86,7 +86,7 @@ final class LocalTranscriber {
                 params.no_context = true; params.suppress_blank = true
                 params.n_threads = Int32(max(1, min(8, ProcessInfo.processInfo.activeProcessorCount - 2)))
                 let code: Int32 = "en".withCString { lang in
-                    "Sayso dictation.".withCString { prompt in
+                    "SaySo dictation.".withCString { prompt in
                         LocalTranscriber.vadURL.path.withCString { vad in
                             params.language = lang; params.initial_prompt = prompt
                             // Silero VAD removes non-speech first, so Whisper cannot invent text from silence or cancelled music.

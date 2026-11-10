@@ -66,7 +66,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$VERSION" --title "Sayso $VERSION" --generate-notes \
+          gh release create "$VERSION" --title "SaySo $VERSION" --generate-notes \
             "build/Sayso-${VERSION}.zip" "build/Sayso-${VERSION}.zip.sha256" "build/Sayso-${VERSION}.zip.sigstore.json"
 
       - name: Bump Homebrew cask on main
