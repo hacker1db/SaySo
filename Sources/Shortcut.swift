@@ -5,6 +5,17 @@ import Foundation
 enum ShortcutTrigger: String, CaseIterable, Identifiable {
     case eitherCommand, rightCommand, leftCommand, rightOption, fn, controlOptionSpace
 
+    /// Older versions defaulted to either Command, which also intercepted left-Command holds.
+    static func restored(_ value: String?) -> ShortcutTrigger {
+        guard let value = value, let trigger = ShortcutTrigger(rawValue: value), trigger != .eitherCommand else {
+            return .rightCommand
+        }
+        return trigger
+    }
+
+    /// Choices shown in settings: each names one physical key, so left and right ⌘ are never both triggers.
+    static let selectable: [ShortcutTrigger] = allCases.filter { $0 != .eitherCommand }
+
     var id: String { rawValue }
 
     var title: String {

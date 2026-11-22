@@ -18,7 +18,11 @@ mkdir -p "$app/Contents/MacOS"
 xcrun swiftc -swift-version 5 -O -target "$(uname -m)-apple-macos13.0" \
   -framework AppKit -framework AVFoundation -framework Carbon -framework ApplicationServices -framework SwiftUI -framework ServiceManagement \
   -import-objc-header Sources/Bridging.h -I"$(brew --prefix)/include" -L"$(brew --prefix)/lib" -lwhisper -lggml \
+  -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
   Sources/*.swift -o "$app/Contents/MacOS/Sayso"
+# Bundle whisper.cpp and ggml so the app never loads them from Homebrew. A Homebrew upgrade that bumps a
+# library's version (ggml 0.x -> 1.x renamed libggml.0.dylib) otherwise makes the app crash at launch.
+"$PWD/scripts/bundle-libs.sh" "$app"
 cp Info.plist "$app/Contents/Info.plist"
 mkdir -p "$app/Contents/Resources"
 cp Resources/Sayso.icns "$app/Contents/Resources/Sayso.icns"
@@ -32,10 +36,12 @@ if [[ -n "${SAYSO_VERSION:-}" ]]; then
 fi
 if [[ -n "$identity" ]]; then
   # Hardened runtime + secure timestamp are required for notarization.
+  for lib in "$app"/Contents/Frameworks/*; do codesign --force --options runtime --timestamp --sign "$identity" "$lib"; done
   codesign --force --options runtime --timestamp --entitlements Sayso.entitlements --sign "$identity" "$app"
 else
+  for lib in "$app"/Contents/Frameworks/*; do codesign --force --sign - "$lib"; done
   codesign --force --sign - "$app"
 fi
-codesign --verify --strict "$app"
+codesign --verify --strict --deep "$app"
 echo "Built: $app"
 echo "Copy it to /Applications before granting permissions, then open it there."

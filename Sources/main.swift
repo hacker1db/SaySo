@@ -40,6 +40,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private var gestureMonitors: [Any] = []
     private var gestureTrusted = false
     private var holdTimer: DispatchWorkItem?
+    private var triggerPressedAt: TimeInterval = 0
     private var permissionTimer: Timer?
     private var startedAt = Date()
     /// `--self-test <seconds>`: record from the microphone, transcribe locally, log the text and quit. Never copies or pastes.
@@ -165,13 +166,19 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             return (raw & mask) != 0
         }
         let keyDown: Bool = held(event.keyCode) ?? flags.contains(flag)
+        // Global monitors never see ⌘Tab (the Dock swallows it), so ask the HID layer whether any key went down while held.
+        func keyPressedDuringHold() -> Bool {
+            CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown) < ProcessInfo.processInfo.systemUptime - triggerPressedAt
+        }
         if keyDown {
             let otherSideHeld = trigger.keyCodes.contains { code in code != event.keyCode && held(code) == true }
             if flags.subtracting(flag).isEmpty && !otherSideHeld {
                 gesture.triggerDown(at: event.timestamp)
+                triggerPressedAt = ProcessInfo.processInfo.systemUptime
                 holdTimer?.cancel()
                 let check = DispatchWorkItem { [weak self] in
                     guard let self = self else { return }
+                    if keyPressedDuringHold() { self.gesture.otherInput(); return }
                     if self.gesture.holdCheck(at: ProcessInfo.processInfo.systemUptime, active: self.recording || self.finishing) == .start { self.toggle() }
                 }
                 holdTimer = check
@@ -180,6 +187,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             return
         }
         holdTimer?.cancel()
+        if keyPressedDuringHold() && gesture.otherInput() == .cancel && recording { cancel(); return }
         switch gesture.triggerUp(at: event.timestamp, active: recording) {
         case .start where !recording && !finishing: toggle()
         case .stop where recording: stop()

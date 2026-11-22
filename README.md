@@ -1,6 +1,6 @@
 # SaySo for Mac
 
-A small menu-bar dictation app. **Double-tap ⌘** anywhere to start talking — no holding — and **tap ⌘ once** to finish and paste into the active app. A pill at the bottom of the screen shows a live waveform with ✕ (cancel, nothing pasted) and ✓ (finish and paste). **Control–Option–Space** always works as a backup. No paid account or API key is required.
+A small menu-bar dictation app. **Double-tap right ⌘** anywhere to start talking — no holding — and **tap right ⌘ once** to finish and paste into the active app. A pill at the bottom of the screen shows a live waveform with ✕ (cancel, nothing pasted) and ✓ (finish and paste). **Control–Option–Space** always works as a backup. No paid account or API key is required.
 
 
 ## Install with Homebrew
@@ -10,7 +10,7 @@ brew tap hacker1db/sayso https://github.com/hacker1db/SaySo
 brew install --cask sayso
 ```
 
-Apple Silicon, macOS 13+. Homebrew installs `whisper-cpp`; SaySo downloads its speech model (about 1.6 GB) on first use.
+Apple Silicon, macOS 13+. The speech engine (whisper.cpp) is bundled in the app; SaySo downloads its speech model (about 1.6 GB) on first use.
 
 ## Releasing
 
@@ -25,7 +25,7 @@ Repository secrets the release workflow reads (names only; values live in GitHub
 
 ## Shortcut
 
-Choose the key in **SaySo › Shortcut**: Command (either side, default), Right ⌘, Left ⌘, Right ⌥, fn/Globe, or Control–Option–Space only. A tap counts only when the key is pressed alone and released within 0.35 s; the second tap must follow within 0.4 s. Any other key, modifier, the other ⌘ key, or a mouse click during the press cancels the gesture, so ⌘C, ⌘V and ⌘-click never start or stop dictation. If you pick fn, first change macOS Dictation's “Press fn twice” shortcut, or both will start. Key gestures are observed passively (nothing is swallowed) and need the same Accessibility permission as auto-paste; without it, use Control–Option–Space.
+Choose the key in **SaySo › Shortcut**: Right ⌘ (default), Left ⌘, Right ⌥, fn/Globe, or Control–Option–Space only. A tap counts only when the key is pressed alone and released within 0.35 s; the second tap must follow within 0.4 s. Any other key, modifier, the other ⌘ key, or a mouse click during the press cancels the gesture, so ⌘C, ⌘V and ⌘-click never start or stop dictation. If you pick fn, first change macOS Dictation's “Press fn twice” shortcut, or both will start. Key gestures are observed passively (nothing is swallowed) and need the same Accessibility permission as auto-paste; without it, use Control–Option–Space.
 
 ## Build and use
 
