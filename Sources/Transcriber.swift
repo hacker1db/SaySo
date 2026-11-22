@@ -46,8 +46,14 @@ final class LocalTranscriber {
     private func loadContext() -> OpaquePointer? {
         if let context = context { return context }
         guard LocalTranscriber.modelInstalled else { return nil }
-        // Homebrew's whisper.cpp ships its Metal/CPU backends as plugins; load them before creating a context.
-        ggml_backend_load_all()
+        // ggml ships its Metal/CPU backends as plugins. build.sh copies them into Contents/Frameworks so a
+        // Homebrew upgrade cannot break the app; fall back to ggml's default search for unbundled dev builds.
+        if let frameworks = Bundle.main.privateFrameworksPath,
+           FileManager.default.fileExists(atPath: frameworks + "/libggml-metal.so") {
+            ggml_backend_load_all_from_path(frameworks)
+        } else {
+            ggml_backend_load_all()
+        }
         var params = whisper_context_default_params()
         params.use_gpu = true
         context = whisper_init_from_file_with_params(LocalTranscriber.modelURL.path, params)

@@ -13,7 +13,6 @@ cask "sayso" do
   end
 
   depends_on arch: :arm64
-  depends_on formula: "whisper-cpp"
   depends_on macos: :ventura
 
   app "Sayso.app"
