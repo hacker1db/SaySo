@@ -36,7 +36,17 @@ final class AppModel: ObservableObject {
     init(persist: Bool = true) {
         let d = UserDefaults.standard
         self.persist = persist
-        trigger = persist ? (ShortcutTrigger(rawValue: d.string(forKey: "trigger") ?? "") ?? .eitherCommand) : .eitherCommand
+        if persist {
+            let saved = d.string(forKey: "trigger")
+            let restored = d.bool(forKey: "rightCommandDefaultMigrated")
+                ? (saved.flatMap(ShortcutTrigger.init(rawValue:)) ?? .rightCommand)
+                : ShortcutTrigger.restored(saved)
+            trigger = restored
+            d.set(restored.rawValue, forKey: "trigger")
+            d.set(true, forKey: "rightCommandDefaultMigrated")
+        } else {
+            trigger = .rightCommand
+        }
         totalWords = persist ? d.integer(forKey: "statWords") : 0
         totalSeconds = persist ? d.double(forKey: "statSeconds") : 0
         streak = persist ? d.integer(forKey: "statStreak") : 0
@@ -391,7 +401,7 @@ struct ShortcutPage: View {
                 .font(.system(size: 14)).foregroundStyle(theme.muted).fixedSize(horizontal: false, vertical: true)
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], spacing: 12) {
-                ForEach(ShortcutTrigger.allCases) { t in
+                ForEach(ShortcutTrigger.selectable) { t in
                     Button { model.trigger = t; model.onTriggerChanged() } label: {
                         HStack(spacing: 12) {
                             Text(t.keyCap)

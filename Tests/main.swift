@@ -72,3 +72,13 @@ print("ShortcutTests: all checks passed")
 check(DictationStatistics.savedSeconds(words: 0, seconds: 0) == 0, "empty stats")
 check(DictationStatistics.savedSeconds(words: 120, seconds: 60) == 120, "savings versus 40 wpm")
 check(DictationStatistics.savedSeconds(words: 40, seconds: 120) == 0, "no negative savings")
+
+check(ShortcutTrigger.restored(nil) == .rightCommand, "new installs use right Command")
+check(ShortcutTrigger.restored("eitherCommand") == .rightCommand, "old default migrates to right Command")
+check(ShortcutTrigger.restored("invalid") == .rightCommand, "invalid preference uses right Command")
+for trigger in ShortcutTrigger.allCases where trigger != .eitherCommand {
+    check(ShortcutTrigger.restored(trigger.rawValue) == trigger, "explicit hotkey survives")
+}
+check(!ShortcutTrigger.restored(nil).keyCodes.contains(55), "left Command cannot activate default hotkey")
+check(ShortcutTrigger.restored(nil).keyCodes.contains(54), "right Command activates default hotkey")
+check(!ShortcutTrigger.selectable.contains(.eitherCommand), "settings never offer either-Command")
