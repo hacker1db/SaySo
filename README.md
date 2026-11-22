@@ -10,7 +10,7 @@ brew tap hacker1db/sayso https://github.com/hacker1db/SaySo
 brew install --cask sayso
 ```
 
-Apple Silicon, macOS 13+. Homebrew installs `whisper-cpp`; SaySo downloads its speech model (about 1.6 GB) on first use.
+Apple Silicon, macOS 13+. The speech engine (whisper.cpp) is bundled in the app; SaySo downloads its speech model (about 1.6 GB) on first use.
 
 ## Releasing
 
