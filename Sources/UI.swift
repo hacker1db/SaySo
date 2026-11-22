@@ -588,7 +588,7 @@ final class PillController {
 
 // MARK: - Window
 
-final class MainWindowController {
+final class MainWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
 
     func show(_ model: AppModel) {
@@ -604,10 +604,17 @@ final class MainWindowController {
             w.title = "SaySo"
             w.contentView = NSHostingView(rootView: MainView(model: model))
             w.center()
+            w.delegate = self
             window = w
         }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Closing the window leaves SaySo running from the menu bar only: drop the Dock icon
+    /// even when "Show Dock icon" is on (that option only applies while the window is open).
+    func windowWillClose(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
     }
 }
 
