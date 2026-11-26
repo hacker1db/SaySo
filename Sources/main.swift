@@ -1,30 +1,58 @@
 import AppKit
 import AVFoundation
+import CoreAudio
 import Carbon.HIToolbox
 import ApplicationServices
 import ServiceManagement
 
 final class DictationApp: NSObject, NSApplicationDelegate {
+    private static let engineSetupTimeout: TimeInterval = 2.0
+    private static let defaultInputAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultInputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+
+    private enum EngineSetupResult {
+        case started(engine: AVAudioEngine, input: AVAudioInputNode, collector: AudioCollector)
+        case invalidFormat
+        case failed(Error)
+    }
+
+    private final class SetupToken {
+        private let lock = NSLock()
+        private var cancelled = false
+        var isCancelled: Bool { lock.lock(); defer { lock.unlock() }; return cancelled }
+        func cancel() { lock.lock(); cancelled = true; lock.unlock() }
+    }
+
     private var status: NSStatusItem!
     private let menu = NSMenu()
     private var toggleItem: NSMenuItem!
     private var stateItem: NSMenuItem!
     private var hotKey: EventHotKeyRef?
     private var handler: EventHandlerRef?
-    private var engine = AVAudioEngine()
+    private var audioQueue = DispatchQueue(label: "sayso.audio")
+    private var engine: AVAudioEngine?
+    private var inputNode: AVAudioInputNode?
+    private var engineQueue: DispatchQueue?
     private let transcriber = LocalTranscriber()
     private var collector: AudioCollector?
     private var tapInstalled = false
+    private var starting = false
     private var recording = false
     private var finishing = false
     private var transcript = ""
     private var lastTranscript = ""
     private var generation = UUID()
+    private var setupToken: SetupToken?
+    private var startTimeout: DispatchWorkItem?
     private var timeout: DispatchWorkItem?
     private var target: NSRunningApplication?
     private var previousApp: NSRunningApplication?
     private var activationObserver: NSObjectProtocol?
     private var audioObserver: NSObjectProtocol?
+    private var defaultInputListener: AudioObjectPropertyListenerBlock?
     private var modalVisible = false
     private var interruption: String?
     private var dockItem: NSMenuItem!
@@ -84,14 +112,22 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             self?.previousApp = app
         }
         audioObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: nil, queue: .main) { [weak self] note in
-            guard let self = self, let changed = note.object as? AVAudioEngine,
-                  changed === self.engine, self.recording else { return }
-            trace("audio configuration changed (engine running: %d)", changed.isRunning ? 1 : 0)
-            // macOS often posts this right after the input starts; only a stopped engine is a real interruption.
-            guard !changed.isRunning else { return }
-            self.interruption = "The microphone configuration changed."
-            self.stop()
+            guard let self = self, let changed = note.object as? AVAudioEngine else { return }
+            let isCurrent = changed === self.engine
+            let running = isCurrent ? changed.isRunning : false
+            trace("audio configuration changed (current: %d, recording: %d, starting: %d, running: %d)",
+                  isCurrent ? 1 : 0, self.recording ? 1 : 0, self.starting ? 1 : 0, running ? 1 : 0)
+            guard isCurrent else { return }
+            if self.recording {
+                // macOS often posts this right after the input starts; only a stopped engine is a real interruption.
+                guard !running else { return }
+                self.interruption = "The microphone configuration changed."
+                self.stop()
+            } else if !self.starting {
+                self.teardownEngine()
+            }
         }
+        installDefaultInputListener()
         installShortcut()
         installMainMenu()
         wireModel()
@@ -102,8 +138,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         if let seconds = selfTestSeconds {
             trace("self-test recording for %.0f s", seconds)
             toggle()
-            guard recording else { trace("self-test could not start recording"); NSApp.terminate(nil); return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in self?.stop() }
+            guard starting || recording else { trace("self-test could not start recording"); NSApp.terminate(nil); return }
             return
         }
         if !UserDefaults.standard.bool(forKey: "hasSeenWelcome") {
@@ -125,7 +160,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         model.onTriggerChanged = { [weak self] in
             guard let self = self else { return }
             self.gesture = TapGesture()
-            if !self.recording && !self.finishing { self.setState(self.readyHint) }
+            if !self.starting && !self.recording && !self.finishing { self.setState(self.readyHint) }
         }
     }
 
@@ -153,7 +188,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         guard trigger.isModifierGesture else { return }
         guard event.type == .flagsChanged, trigger.keyCodes.contains(event.keyCode) else {
             holdTimer?.cancel()
-            if gesture.otherInput() == .cancel && recording { cancel() }
+            if gesture.otherInput() == .cancel && (recording || starting) { cancel() }
             return
         }
         let flag: NSEvent.ModifierFlags = trigger == .fn ? .function : (trigger == .rightOption ? .option : .command)
@@ -172,17 +207,18 @@ final class DictationApp: NSObject, NSApplicationDelegate {
                 holdTimer?.cancel()
                 let check = DispatchWorkItem { [weak self] in
                     guard let self = self else { return }
-                    if self.gesture.holdCheck(at: ProcessInfo.processInfo.systemUptime, active: self.recording || self.finishing) == .start { self.toggle() }
+                    if self.gesture.holdCheck(at: ProcessInfo.processInfo.systemUptime, active: self.starting || self.recording || self.finishing) == .start { self.toggle() }
                 }
                 holdTimer = check
                 DispatchQueue.main.asyncAfter(deadline: .now() + gesture.holdDelay, execute: check)
-            } else if gesture.otherInput() == .cancel && recording { cancel() }
+            } else if gesture.otherInput() == .cancel && (recording || starting) { cancel() }
             return
         }
         holdTimer?.cancel()
-        switch gesture.triggerUp(at: event.timestamp, active: recording) {
-        case .start where !recording && !finishing: toggle()
+        switch gesture.triggerUp(at: event.timestamp, active: recording || starting) {
+        case .start where !starting && !recording && !finishing: toggle()
         case .stop where recording: stop()
+        case .stop where starting: cancel()
         default: break
         }
     }
@@ -191,7 +227,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        guard !modalVisible && !recording && !finishing else { return false }
+        guard !modalVisible && !starting && !recording && !finishing else { return false }
         openWindow()
         return false
     }
@@ -267,11 +303,64 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         if !trusted { show("Enable automatic paste", "Allow SaySo in System Settings → Privacy & Security → Accessibility. Restart the app if macOS asks. Without this permission your transcript is still copied for manual paste.") }
     }
 
+    private func installDefaultInputListener() {
+        var address = Self.defaultInputAddress
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            self?.handleDefaultInputDeviceChanged()
+        }
+        let status = AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, DispatchQueue.main, listener)
+        if status == noErr { defaultInputListener = listener }
+        else { trace("default input device listener failed (status: %d)", status) }
+    }
+
+    private func removeDefaultInputListener() {
+        guard let listener = defaultInputListener else { return }
+        var address = Self.defaultInputAddress
+        AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, DispatchQueue.main, listener)
+        defaultInputListener = nil
+    }
+
+    private func handleDefaultInputDeviceChanged() {
+        trace("default input device changed (recording: %d, starting: %d)", recording ? 1 : 0, starting ? 1 : 0)
+        if recording {
+            interruption = "The default microphone changed."
+            stop()
+        } else if starting {
+            abandonAudioQueue()
+            generation = UUID()
+            cleanup()
+            setState("Microphone changed · try again")
+        } else {
+            teardownEngine()
+        }
+    }
+
+    /// Abandons a hung or stale audio queue so the next toggle creates a fresh engine without blocking.
+    private func abandonAudioQueue() {
+        setupToken?.cancel(); setupToken = nil
+        audioQueue = DispatchQueue(label: "sayso.audio")
+    }
+
+    /// Stops and removes any active tap on the engine's own audio queue without blocking the main thread.
+    private func teardownEngine() {
+        let activeEngine = engine
+        let activeInput = inputNode
+        let activeQueue = engineQueue
+        let hadTap = tapInstalled
+        engine = nil; inputNode = nil; engineQueue = nil; tapInstalled = false
+        guard let activeEngine = activeEngine else { return }
+        let queue = activeQueue ?? audioQueue
+        queue.async {
+            activeEngine.stop()
+            if hadTap { activeInput?.removeTap(onBus: 0) }
+        }
+    }
+
     @objc fileprivate func toggle() {
-        trace("toggle (recording: %d, finishing: %d, modal: %d)", recording ? 1 : 0, finishing ? 1 : 0, modalVisible ? 1 : 0)
+        trace("toggle (recording: %d, starting: %d, finishing: %d, modal: %d)", recording ? 1 : 0, starting ? 1 : 0, finishing ? 1 : 0, modalVisible ? 1 : 0)
         guard !modalVisible else { return }
         if recording { stop(); return }
-        guard !finishing else { return }
+        guard !starting && !finishing else { return }
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { permissions(); return }
         guard LocalTranscriber.modelInstalled else {
             openWindow(); downloadModel(); return
@@ -279,50 +368,124 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         let active = NSWorkspace.shared.frontmostApplication
         target = active?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? previousApp : active
         transcript = ""; interruption = nil
-        engine = AVAudioEngine()
+        starting = true
         let id = UUID(); generation = id
-        let input = engine.inputNode
-        if voiceIsolation {
-            // Removes audio this Mac is playing (music) from the mic and suppresses background noise.
-            do {
-                try input.setVoiceProcessingEnabled(true)
-                if #available(macOS 14.0, *) {
-                    // Do not turn the user's music down while dictating.
-                    input.voiceProcessingOtherAudioDuckingConfiguration = .init(enableAdvancedDucking: false, duckingLevel: .min)
+        let useVoiceIsolation = voiceIsolation
+        let token = SetupToken(); setupToken = token
+        let queue = audioQueue
+        setState("Starting microphone…")
+        let startGuard = DispatchWorkItem { [weak self] in
+            guard let self = self, self.starting, self.generation == id else { return }
+            trace("audio engine setup timed out after %.1f s", Self.engineSetupTimeout)
+            self.abandonAudioQueue()
+            self.generation = UUID()
+            self.cleanup()
+            self.setState(self.readyHint)
+            if self.selfTestSeconds != nil {
+                trace("self-test could not start recording")
+                NSApp.terminate(nil)
+                return
+            }
+            self.show("No microphone available", "Choose a working input device in System Settings → Sound.")
+        }
+        startTimeout = startGuard
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.engineSetupTimeout, execute: startGuard)
+        queue.async { [weak self] in
+            let newEngine = AVAudioEngine()
+            let input = newEngine.inputNode
+            if token.isCancelled { trace("aborting stale audio engine setup"); return }
+            if useVoiceIsolation {
+                // Removes audio this Mac is playing (music) from the mic and suppresses background noise.
+                do {
+                    try input.setVoiceProcessingEnabled(true)
+                    if #available(macOS 14.0, *) {
+                        // Do not turn the user's music down while dictating.
+                        input.voiceProcessingOtherAudioDuckingConfiguration = .init(enableAdvancedDucking: false, duckingLevel: .min)
+                    }
+                } catch { trace("voice processing unavailable: %@", error.localizedDescription) }
+            }
+            let format = input.outputFormat(forBus: 0)
+            trace("input format: %@ (isolation: %d)", format.description, input.isVoiceProcessingEnabled ? 1 : 0)
+            if token.isCancelled { trace("aborting stale audio engine setup"); return }
+            guard format.sampleRate > 0 && format.channelCount > 0, let buffer = AudioCollector(input: format) else {
+                DispatchQueue.main.async { self?.finishEngineSetup(id: id, queue: queue, result: .invalidFormat) }
+                return
+            }
+            input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] audio, _ in
+                buffer.append(audio)
+                // Mic level for the pill's waveform: RMS of the first channel, mapped from -50…-10 dB to 0…1.
+                guard let samples = audio.floatChannelData?[0], audio.frameLength > 0 else { return }
+                var sum: Float = 0
+                for i in 0..<Int(audio.frameLength) { sum += samples[i] * samples[i] }
+                let db = 20 * log10(max(sqrt(sum / Float(audio.frameLength)), 1e-6))
+                let level = min(1, max(0, (db + 50) / 40))
+                DispatchQueue.main.async {
+                    guard let self = self, self.recording, self.generation == id else { return }
+                    self.model.level = level
                 }
-            } catch { trace("voice processing unavailable: %@", error.localizedDescription) }
+            }
+            do { newEngine.prepare(); try newEngine.start() }
+            catch {
+                newEngine.stop()
+                input.removeTap(onBus: 0)
+                DispatchQueue.main.async { self?.finishEngineSetup(id: id, queue: queue, result: .failed(error)) }
+                return
+            }
+            DispatchQueue.main.async {
+                self?.finishEngineSetup(id: id, queue: queue, result: .started(engine: newEngine, input: input, collector: buffer))
+            }
         }
-        let format = input.outputFormat(forBus: 0)
-        trace("input format: %@ (isolation: %d)", format.description, input.isVoiceProcessingEnabled ? 1 : 0)
-        guard format.sampleRate > 0 && format.channelCount > 0, let buffer = AudioCollector(input: format) else { show("No microphone available", "Choose a working input device in System Settings → Sound."); return }
-        collector = buffer
-        input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] audio, _ in
-            buffer.append(audio)
-            // Mic level for the pill's waveform: RMS of the first channel, mapped from -50…-10 dB to 0…1.
-            guard let samples = audio.floatChannelData?[0], audio.frameLength > 0 else { return }
-            var sum: Float = 0
-            for i in 0..<Int(audio.frameLength) { sum += samples[i] * samples[i] }
-            let db = 20 * log10(max(sqrt(sum / Float(audio.frameLength)), 1e-6))
-            let level = min(1, max(0, (db + 50) / 40))
-            DispatchQueue.main.async { self?.model.level = level }
+    }
+
+    private func finishEngineSetup(id: UUID, queue: DispatchQueue, result: EngineSetupResult) {
+        guard starting, generation == id else {
+            if case .started(let lateEngine, let lateInput, _) = result {
+                trace("discarding late audio engine setup")
+                queue.async {
+                    lateEngine.stop()
+                    lateInput.removeTap(onBus: 0)
+                }
+            }
+            return
         }
-        tapInstalled = true
-        do { engine.prepare(); try engine.start() }
-        catch { cleanup(); show("Could not start recording", error.localizedDescription); return }
-        recording = true; finishing = false; startedAt = Date()
-        toggleItem.title = "Stop & paste"; status.button?.title = "● Recording"
-        setState("Listening · \(model.trigger.stopHint) to finish")
-        model.phase = .listening; pill.show(model)
-        // Keep memory bounded: stop and transcribe after ten minutes.
-        let limit = DispatchWorkItem { [weak self] in self?.stop() }
-        timeout = limit; DispatchQueue.main.asyncAfter(deadline: .now() + 600, execute: limit)
+        startTimeout?.cancel(); startTimeout = nil
+        setupToken = nil
+        starting = false
+        switch result {
+        case .invalidFormat:
+            cleanup()
+            setState(readyHint)
+            if selfTestSeconds != nil { trace("self-test could not start recording"); NSApp.terminate(nil); return }
+            show("No microphone available", "Choose a working input device in System Settings → Sound.")
+        case .failed(let error):
+            cleanup()
+            setState(readyHint)
+            if selfTestSeconds != nil { trace("self-test could not start recording"); NSApp.terminate(nil); return }
+            show("Could not start recording", error.localizedDescription)
+        case .started(let startedEngine, let startedInput, let buffer):
+            engine = startedEngine
+            inputNode = startedInput
+            engineQueue = queue
+            tapInstalled = true
+            collector = buffer
+            recording = true; finishing = false; startedAt = Date()
+            toggleItem.title = "Stop & paste"; status.button?.title = "● Recording"
+            setState("Listening · \(model.trigger.stopHint) to finish")
+            model.phase = .listening; pill.show(model)
+            // Keep memory bounded: stop and transcribe after ten minutes.
+            let limit = DispatchWorkItem { [weak self] in self?.stop() }
+            timeout = limit; DispatchQueue.main.asyncAfter(deadline: .now() + 600, execute: limit)
+            if let seconds = selfTestSeconds {
+                DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in self?.stop() }
+            }
+        }
     }
 
     private func stop() {
         guard recording else { return }
         recording = false; finishing = true
-        timeout?.cancel(); engine.stop()
-        if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
+        timeout?.cancel(); timeout = nil
+        teardownEngine()
         setState("Transcribing on this Mac…"); status.button?.title = "… SaySo"
         model.phase = .finishing
         let id = generation, samples = collector?.take() ?? []
@@ -339,18 +502,19 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     }
 
     private func cleanup() {
+        startTimeout?.cancel(); startTimeout = nil
         timeout?.cancel(); timeout = nil
-        engine.stop()
-        if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
+        setupToken?.cancel(); setupToken = nil
+        teardownEngine()
         collector = nil
-        recording = false; finishing = false
+        starting = false; recording = false; finishing = false
         toggleItem.title = "Start dictation"; status.button?.title = "SaySo"
         model.phase = .idle; model.level = 0; pill.hide()
     }
 
     /// ✕ in the pill: discard everything, paste nothing.
     private func cancel() {
-        guard recording || finishing else { return }
+        guard starting || recording || finishing else { return }
         generation = UUID(); cleanup()
         setState("Cancelled · nothing pasted")
     }
@@ -378,7 +542,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     }
 
     private func pasteWhenReleased(text: String, process: pid_t, generation id: UUID, deadline: Date) {
-        guard generation == id, !recording && !finishing else { return }
+        guard generation == id, !starting && !recording && !finishing else { return }
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == process,
               NSPasteboard.general.string(forType: .string) == text else {
             trace("paste skipped: focus or clipboard changed (front: %@)", NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "none")
@@ -445,17 +609,23 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         if let handler = handler { RemoveEventHandler(handler) }
         if let observer = activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(observer) }
         if let observer = audioObserver { NotificationCenter.default.removeObserver(observer) }
+        removeDefaultInputListener()
         gestureMonitors.forEach(NSEvent.removeMonitor)
         transcriber.shutdown()
     }
 }
 
+private let traceLock = NSLock()
+
 /// Diagnostics (never transcript text, except in --self-test) to ~/Library/Logs/Sayso.log and stderr.
 func trace(_ format: String, _ args: CVarArg...) {
     let line = "\(Date()) SaySo: " + String(format: format, arguments: args) + "\n"
-    FileHandle.standardError.write(line.data(using: .utf8)!)
+    let data = line.data(using: .utf8)!
+    traceLock.lock()
+    defer { traceLock.unlock() }
+    FileHandle.standardError.write(data)
     let url = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0].appendingPathComponent("Logs/Sayso.log")
-    if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(line.data(using: .utf8)!); try? h.close() }
+    if let h = try? FileHandle(forWritingTo: url) { h.seekToEndOfFile(); h.write(data); try? h.close() }
     else { try? line.write(to: url, atomically: true, encoding: .utf8) }
 }
 
