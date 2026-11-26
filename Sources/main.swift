@@ -6,7 +6,7 @@ import ApplicationServices
 import ServiceManagement
 
 final class DictationApp: NSObject, NSApplicationDelegate {
-    private static let engineSetupTimeout: TimeInterval = 2.0
+    private static let engineSetupTimeout: TimeInterval = 6.0
     private static let defaultInputAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultInputDevice,
         mScope: kAudioObjectPropertyScopeGlobal,
@@ -323,6 +323,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private func handleDefaultInputDeviceChanged() {
         trace("default input device changed (recording: %d, starting: %d)", recording ? 1 : 0, starting ? 1 : 0)
         if recording {
+            // A running engine is left to the configuration-change observer, which handles real interruptions.
+            guard engine?.isRunning == false else { return }
             interruption = "The default microphone changed."
             stop()
         } else if starting {
@@ -463,6 +465,14 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             if selfTestSeconds != nil { trace("self-test could not start recording"); NSApp.terminate(nil); return }
             show("Could not start recording", error.localizedDescription)
         case .started(let startedEngine, let startedInput, let buffer):
+            // A configuration change can stop the engine before this result reaches main; don't record silence.
+            guard startedEngine.isRunning else {
+                trace("audio engine stopped during setup")
+                queue.async { startedEngine.stop(); startedInput.removeTap(onBus: 0) }
+                cleanup()
+                setState("Microphone changed · try again")
+                return
+            }
             engine = startedEngine
             inputNode = startedInput
             engineQueue = queue
