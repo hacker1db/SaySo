@@ -468,7 +468,6 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             return
         }
         startTimeout?.cancel(); startTimeout = nil
-        setupToken = nil
         starting = false
         switch result {
         case .invalidFormat:
