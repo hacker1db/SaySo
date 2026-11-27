@@ -7,6 +7,8 @@ import ServiceManagement
 
 final class DictationApp: NSObject, NSApplicationDelegate {
     private static let engineSetupTimeout: TimeInterval = 6.0
+    /// Each timed-out setup leaves a thread blocked in CoreAudio; stop trying after this many in a row.
+    private static let maxHungSetups = 3
     private static let defaultInputAddress = AudioObjectPropertyAddress(
         mSelector: kAudioHardwarePropertyDefaultInputDevice,
         mScope: kAudioObjectPropertyScopeGlobal,
@@ -46,6 +48,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     private var lastTranscript = ""
     private var generation = UUID()
     private var setupToken: SetupToken?
+    private var hungSetups = 0
     private var startTimeout: DispatchWorkItem?
     private var timeout: DispatchWorkItem?
     private var target: NSRunningApplication?
@@ -363,6 +366,11 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         guard !modalVisible else { return }
         if recording { stop(); return }
         guard !starting && !finishing else { return }
+        guard hungSetups < Self.maxHungSetups else {
+            trace("audio engine start refused after %d hung setups", hungSetups)
+            show("Microphone not responding", "macOS audio stopped responding. Quit and reopen SaySo; if it keeps happening, restart the Mac.")
+            return
+        }
         guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { permissions(); return }
         guard LocalTranscriber.modelInstalled else {
             openWindow(); downloadModel(); return
@@ -379,6 +387,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         let startGuard = DispatchWorkItem { [weak self] in
             guard let self = self, self.starting, self.generation == id else { return }
             trace("audio engine setup timed out after %.1f s", Self.engineSetupTimeout)
+            self.hungSetups += 1
             self.abandonAudioQueue()
             self.generation = UUID()
             self.cleanup()
@@ -414,6 +423,8 @@ final class DictationApp: NSObject, NSApplicationDelegate {
                 return
             }
             input.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] audio, _ in
+                // After stop or cancel, drop audio even if a teardown is stuck behind a hung queue.
+                guard !token.isCancelled else { return }
                 buffer.append(audio)
                 // Mic level for the pill's waveform: RMS of the first channel, mapped from -50…-10 dB to 0…1.
                 guard let samples = audio.floatChannelData?[0], audio.frameLength > 0 else { return }
@@ -431,6 +442,12 @@ final class DictationApp: NSObject, NSApplicationDelegate {
                 newEngine.stop()
                 input.removeTap(onBus: 0)
                 DispatchQueue.main.async { self?.finishEngineSetup(id: id, queue: queue, result: .failed(error)) }
+                return
+            }
+            if token.isCancelled {
+                // Cancelled while starting: stop here instead of queueing a stop behind later work.
+                trace("aborting stale audio engine setup after start")
+                newEngine.stop(); input.removeTap(onBus: 0)
                 return
             }
             DispatchQueue.main.async {
@@ -473,6 +490,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
                 setState("Microphone changed · try again")
                 return
             }
+            hungSetups = 0
             engine = startedEngine
             inputNode = startedInput
             engineQueue = queue
@@ -500,6 +518,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         model.phase = .finishing
         let id = generation, samples = collector?.take() ?? []
         collector = nil
+        setupToken?.cancel(); setupToken = nil
         trace("transcribing %d samples locally", samples.count)
         guard samples.count >= 8_000 else { complete(id: id, error: nil); return }
         transcriber.transcribe(samples) { [weak self] result in
@@ -525,6 +544,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     /// ✕ in the pill: discard everything, paste nothing.
     private func cancel() {
         guard starting || recording || finishing else { return }
+        if starting { abandonAudioQueue() }
         generation = UUID(); cleanup()
         setState("Cancelled · nothing pasted")
     }
