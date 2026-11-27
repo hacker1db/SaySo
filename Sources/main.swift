@@ -335,6 +335,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             generation = UUID()
             cleanup()
             setState("Microphone changed · try again")
+            if selfTestSeconds != nil { trace("self-test could not start recording"); NSApp.terminate(nil) }
         } else {
             teardownEngine()
         }
@@ -487,6 +488,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
                 queue.async { startedEngine.stop(); startedInput.removeTap(onBus: 0) }
                 cleanup()
                 setState("Microphone changed · try again")
+                if selfTestSeconds != nil { trace("self-test could not start recording"); NSApp.terminate(nil) }
                 return
             }
             hungSetups = 0
